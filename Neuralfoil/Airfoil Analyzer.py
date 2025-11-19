@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import neuralfoil as nf
 import os
 
@@ -8,7 +7,7 @@ import os
 # ============================================================
 
 def read_airfoil_file(filename):
-    """Parses the airfoil_points_2412.txt file and extracts control, upper, and lower surfaces."""
+    """Parses the airfoil file and extracts control, upper, and lower surfaces."""
     with open(filename, "r") as f:
         lines = f.readlines()
 
@@ -50,7 +49,7 @@ def read_airfoil_file(filename):
 
 
 # ============================================================
-# === NEURALFOIL EVALUATION ==================================
+# === NEURALFOIL EVALUATION =================================
 # ============================================================
 
 def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
@@ -98,93 +97,65 @@ def save_polar_file(filename, alphas, CL, CD, Cm=None):
 
 
 # ============================================================
-# === MAIN PROGRAM ===========================================
+# === MAIN PROGRAM FOR MULTIPLE AIRFOILS =====================
 # ============================================================
 
 def main():
-    filename = "../Morphing/Geometry/airfoil_points_015.txt"
-    print(f"📂 Reading airfoil geometry from '{filename}' ...")
-
-    # Read data
-    x_ctrl, y_ctrl, offsets, xu, yu, xl, yl = read_airfoil_file(filename)
-    print(f"✅ Loaded {len(xu)} upper and {len(xl)} lower surface points.")
-
-    # Prepare airfoil coordinates for NeuralFoil
-    coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
-
-    # Define AoA range and Reynolds number
-    alphas = np.linspace(-5, 12, 200)
-    Re = 1e6
-
-    # Evaluate aerodynamic performance
-    print("🧠 Running NeuralFoil aerodynamic evaluation...")
-    aero = evaluate_airfoil(coords, alphas, Re=Re)
-
-    # Extract aerodynamic coefficients safely
-    CL = aero.get("CL", aero.get("cl"))
-    CD = aero.get("CD", aero.get("cd"))
-    Cm = aero.get("CM", aero.get("cm"))
-
-    if CL is None or CD is None:
-        raise ValueError("❌ NeuralFoil did not return CL or CD. Check your NeuralFoil version or model size.")
-
-    CL_CD = CL / CD
-
-    # ========================================================
-    # === SAVE RESULTS =======================================
-    # ========================================================
-
-    # Create simulation results directory if it doesn't exist
+    # Directory to save results
     results_dir = "Simulation Results"
     os.makedirs(results_dir, exist_ok=True)
 
-    # Extract the numeric part from the airfoil filename (e.g., 'airfoil_points_000.txt')
-    airfoil_number = os.path.splitext(os.path.basename(filename))[0].split('_')[-1]
+    # Loop through airfoils 000 to 914 (inclusive)
+    for i in range(915):
+        num_str = f"{i:03d}"  # zero-padded
+        filename = f"../Morphing/Geometry/airfoil_points_{num_str}.txt"
 
-    # Automatically set polar filename based on airfoil number and Re
-    output_file = os.path.join(results_dir, f"polar_NeuralFoil_{airfoil_number}_Re{int(Re):.0f}.txt")
-    save_polar_file(output_file, alphas, CL, CD, Cm)
+        if not os.path.exists(filename):
+            print(f"⚠️ Skipping {filename} — file not found.")
+            continue
 
-    # ========================================================
-    # === PLOTS ==============================================
-    # ========================================================
+        print(f"\n📂 Reading airfoil geometry from '{filename}' ...")
 
-    num_plots = 4 if Cm is not None else 3
-    plt.figure(figsize=(10, num_plots * 2.5))
+        # Read data
+        try:
+            x_ctrl, y_ctrl, offsets, xu, yu, xl, yl = read_airfoil_file(filename)
+        except Exception as e:
+            print(f"❌ Error reading {filename}: {e}")
+            continue
 
-    plt.subplot(num_plots, 1, 1)
-    plt.plot(alphas, CL, "b-")
-    plt.title("Lift Coefficient (CL) vs Angle of Attack")
-    plt.xlabel("Angle of Attack (°)")
-    plt.ylabel("CL")
-    plt.grid(True)
+        print(f"✅ Loaded {len(xu)} upper and {len(xl)} lower surface points.")
 
-    plt.subplot(num_plots, 1, 2)
-    plt.plot(alphas, CD, "r-")
-    plt.title("Drag Coefficient (CD) vs Angle of Attack")
-    plt.xlabel("Angle of Attack (°)")
-    plt.ylabel("CD")
-    plt.grid(True)
+        # Prepare airfoil coordinates for NeuralFoil
+        coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
 
-    plt.subplot(num_plots, 1, 3)
-    plt.plot(alphas, CL_CD, "g-")
-    plt.title("Lift-to-Drag Ratio (CL/CD) vs Angle of Attack")
-    plt.xlabel("Angle of Attack (°)")
-    plt.ylabel("CL/CD")
-    plt.grid(True)
+        # Define AoA range and Reynolds number
+        alphas = np.linspace(-5, 12, 200)
+        Re = 1e6
 
-    if Cm is not None:
-        plt.subplot(num_plots, 1, 4)
-        plt.plot(alphas, Cm, "m-")
-        plt.title("Pitching Moment Coefficient (Cm) vs Angle of Attack")
-        plt.xlabel("Angle of Attack (°)")
-        plt.ylabel("Cm")
-        plt.grid(True)
+        # Evaluate aerodynamic performance
+        print("🧠 Running NeuralFoil aerodynamic evaluation...")
+        try:
+            aero = evaluate_airfoil(coords, alphas, Re=Re)
+        except Exception as e:
+            print(f"❌ NeuralFoil evaluation failed for {num_str}: {e}")
+            continue
 
-    plt.tight_layout()
-    plt.show()
+        # Extract aerodynamic coefficients safely
+        CL = aero.get("CL", aero.get("cl"))
+        CD = aero.get("CD", aero.get("cd"))
+        Cm = aero.get("CM", aero.get("cm"))
 
-    print("✅ Analysis complete. Plots displayed successfully.")
+        if CL is None or CD is None:
+            print(f"❌ NeuralFoil returned no CL/CD for {filename}. Skipping.")
+            continue
+
+        # Save results
+        output_file = os.path.join(results_dir, f"polar_NeuralFoil_{num_str}_Re{int(Re):.0f}.txt")
+        save_polar_file(output_file, alphas, CL, CD, Cm)
+
+        print(f"✅ Airfoil {num_str} processed.\n")
+
+    print("\n🎯 All requested airfoils processed!")
 
 
 # ============================================================
