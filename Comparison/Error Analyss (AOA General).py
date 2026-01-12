@@ -200,29 +200,30 @@ if use_sklearn:
     joblib.dump(model_cm_sgd, os.path.join(model_dir, "global_cm_sgd.joblib"))
 
     print("\nTraining Gradient Boosting models...")
+
     model_cl_gb = GradientBoostingRegressor(
-        n_estimators=600,
-        learning_rate=0.03,
+        n_estimators=1500,
+        learning_rate=0.015,
         max_depth=6,
-        subsample=0.8,
+        subsample=0.9,
         min_samples_leaf=3,
         verbose=1
     )
 
     model_cd_gb = GradientBoostingRegressor(
-        n_estimators=600,
-        learning_rate=0.03,
+        n_estimators=1500,
+        learning_rate=0.015,
         max_depth=6,
-        subsample=0.8,
+        subsample=0.9,
         min_samples_leaf=3,
         verbose=1
     )
 
     model_cm_gb = GradientBoostingRegressor(
-        n_estimators=600,
-        learning_rate=0.03,
+        n_estimators=1500,
+        learning_rate=0.015,
         max_depth=6,
-        subsample=0.8,
+        subsample=0.9,
         min_samples_leaf=3,
         verbose=1
     )
