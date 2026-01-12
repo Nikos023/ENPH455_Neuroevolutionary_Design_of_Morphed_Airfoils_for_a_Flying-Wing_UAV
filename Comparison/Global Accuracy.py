@@ -27,9 +27,9 @@ model_dir = os.path.join(comparison_dir, "global_model")
 # === LOAD GLOBAL MODELS =====================================
 # ============================================================
 
-model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb.joblib"))
-model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb.joblib"))
-model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
+model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_1000_samples.joblib"))
+model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_1000_samples.joblib"))
+model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_1000_samples.joblib"))
 
 # ============================================================
 # === FILE READING FUNCTIONS =================================

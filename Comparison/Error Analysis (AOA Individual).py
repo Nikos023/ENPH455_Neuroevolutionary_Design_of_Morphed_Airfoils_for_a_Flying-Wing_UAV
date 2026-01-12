@@ -206,6 +206,6 @@ for a in sorted(correction_models.keys()):
         "n_samples": meta.get("n_samples", np.nan),
         "method": meta.get("method", "RidgeCV")
     })
-pd.DataFrame(summary_rows).to_csv(os.path.join(model_dir, "model_summary.csv"), index=False)
+pd.DataFrame(summary_rows).to_csv(os.path.join(model_dir, "model_summary_1000_samples.csv"), index=False)
 print(f"\n✅ Trained per-AoA models saved into {model_dir}")
-print("Model summary written to model_summary.csv")
+print("Model summary written to model_summary_1000_samples.csv")
