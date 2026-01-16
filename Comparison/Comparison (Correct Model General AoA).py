@@ -74,15 +74,15 @@ def read_polar(filename):
 # === LOAD GLOBAL MODELS =====================================
 # ============================================================
 
-model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_1000_samples.joblib"))
-model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_1000_samples.joblib"))
-model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_1000_samples.joblib"))
+model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_2000_samples.joblib"))
+model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_2000_samples.joblib"))
+model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_2000_samples.joblib"))
 
 # ============================================================
 # === SELECT AIRFOIL =========================================
 # ============================================================
 
-airfoil_number = "572"
+airfoil_number = "705"
 geom_file = os.path.join(geom_dir, f"airfoil_points_{airfoil_number}.txt")
 file_xfoil = os.path.join(xfoil_dir, f"polar_XFOIL_{airfoil_number}_Re{int(Re):.0f}.txt")
 file_nf = os.path.join(nf_dir, f"polar_NeuralFoil_{airfoil_number}_Re{int(Re):.0f}.txt")

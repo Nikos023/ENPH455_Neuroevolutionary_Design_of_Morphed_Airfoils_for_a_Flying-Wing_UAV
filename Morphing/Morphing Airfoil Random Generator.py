@@ -66,7 +66,7 @@ y_ctrl_base = np.interp(x_ctrl, x, yc_base)
 # ============================================================
 
 os.makedirs("Geometry", exist_ok=True)
-n_samples = 1000
+n_samples = 2000
 
 for i in range(1, n_samples + 1):
     # ---- Create smooth random offsets (like manual morphs) ----
@@ -120,4 +120,4 @@ for i in range(1, n_samples + 1):
 
     print(f"✅ Saved {txt_filename} and {dat_filename}")
 
-print("\n🎉 Done! 100 randomized airfoil geometries generated in /Geometry/")
+print("\n🎉 Done! 2000 randomized airfoil geometries generated in /Geometry/")

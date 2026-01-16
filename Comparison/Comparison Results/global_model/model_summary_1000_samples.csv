@@ -1,2 +1,2 @@
 n_samples,method,poly_degree
-177286,HuberSGD + GradientBoosting,4
+387572,HuberSGD + GradientBoosting,4

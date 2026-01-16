@@ -106,7 +106,7 @@ def main():
     os.makedirs(results_dir, exist_ok=True)
 
     # Loop through airfoils 000 to 914 (inclusive)
-    for i in range(915):
+    for i in range(2001):
         num_str = f"{i:03d}"  # zero-padded
         filename = f"../Morphing/Geometry/airfoil_points_{num_str}.txt"
 

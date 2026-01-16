@@ -30,6 +30,13 @@ panel_count = 300  # Recommended: 150–400 for small UAVs
 alpha_points = np.linspace(-5, 12, 200)
 
 # ============================================================
+# === START / END CONTROL (ONLY CHANGE) ======================
+# ============================================================
+
+START_INDEX = 1468    # change this to restart
+END_INDEX = 2000
+
+# ============================================================
 # === UTILITY FUNCTIONS ======================================
 # ============================================================
 
@@ -79,10 +86,10 @@ def repanel_airfoil(xu, yu, xl, yl, n_points=200):
     return x_all, y_all
 
 # ============================================================
-# === MAIN LOOP FOR FILES 0-100 =============================
+# === MAIN LOOP ==============================================
 # ============================================================
 
-for i in range(1001):
+for i in range(START_INDEX, END_INDEX + 1):
     # Construct file paths
     num_str = f"{i:03d}"  # zero-padded number
     airfoil_file = f"{airfoil_base_path}{num_str}{airfoil_ext}"
@@ -126,7 +133,13 @@ for i in range(1001):
     xfoil_input = "\n".join(commands) + "\n"
 
     # Run XFOIL
-    process = subprocess.run([xfoil_path], input=xfoil_input, text=True, capture_output=True)
+    process = subprocess.run(
+        [xfoil_path],
+        input=xfoil_input,
+        text=True,
+        capture_output=True
+    )
+
     if process.returncode != 0:
         print("❌ XFOIL failed to run.")
         continue
