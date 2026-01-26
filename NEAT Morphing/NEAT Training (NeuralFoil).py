@@ -21,7 +21,7 @@ from neuralfoil import get_aero_from_coordinates
 m, p, t = 0.02, 0.4, 0.12
 num_points = 1000
 num_ctrl = 10
-REYNOLDS = 1e6
+REYNOLDS = 5e5
 
 # Cosine spacing
 beta = np.linspace(0, np.pi, num_points)
