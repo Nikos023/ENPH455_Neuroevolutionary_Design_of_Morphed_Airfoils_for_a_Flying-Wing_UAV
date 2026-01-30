@@ -19,7 +19,7 @@ import os
 
 # ================== CONFIG ===============================
 config_path = "NEAT Config Single Genome.ini"
-best_genome_file = "BestGenomes/best_genome_nf_aoa5.pkl"
+best_genome_file = "BestGenomes/best_genome_nf_aoa5_factor20_0406.pkl"
 output_name = "NEAT_airfoil"
 
 num_ctrl = 10
