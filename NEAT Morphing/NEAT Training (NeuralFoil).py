@@ -17,6 +17,10 @@ from scipy.interpolate import make_interp_spline
 from scipy.ndimage import gaussian_filter1d
 import joblib
 from neuralfoil import get_aero_from_coordinates
+from Visualize import draw_net
+
+# >>> ADDED
+import matplotlib.pyplot as plt
 
 # ================== BASE PARAMETERS =========================
 m, p, t = 0.02, 0.4, 0.12
@@ -47,7 +51,9 @@ x_ctrl = np.concatenate([x_ctrl_left, x_ctrl_right])
 y_ctrl_base = np.interp(x_ctrl, x_dense, yc_base)
 
 # Max delta_y per control point
-max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
+#max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
+#max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
+max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
 
 # ================== HELPER FUNCTIONS ========================
 def smooth_camber(x_ctrl, y_ctrl, x_dense):
@@ -80,40 +86,40 @@ model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_2000_samples.joblib
 def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     net = neat.nn.FeedForwardNetwork.create(genome, config)
 
-    # Control point noise
     y_ctrl_noisy = y_ctrl_base + np.random.normal(0, noise_sigma, size=num_ctrl)
     X_input_net = np.hstack([y_ctrl_noisy, target_aoa]).reshape(1, -1)
 
-    # Network output
     raw_output = np.array(net.activate(X_input_net.flatten()))[:num_ctrl]
     delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
-
-    # Smooth delta_y across control points
     delta_y_smooth = gaussian_filter1d(delta_y, sigma=2.0)
     y_ctrl = y_ctrl_base + delta_y_smooth
 
-    # Smooth camber line
     yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
 
-    # Smooth center lock
-    center_start, center_end = 0.3, 0.7
+    center_start, center_end = 0.33, 0.66
     center_mask = (x_dense > center_start) & (x_dense < center_end)
+
+    coeffs = np.polyfit(
+        x_dense[center_mask],
+        yc_base[center_mask],
+        1
+    )
+    yc_trend = np.polyval(coeffs, x_dense[center_mask])
+
     blend_x = (x_dense[center_mask] - center_start) / (center_end - center_start)
     weights = 0.5 * (1 - np.cos(np.pi * blend_x))
-    yc[center_mask] = (1 - weights) * yc[center_mask] + weights * yc_base[center_mask]
+    weights *= 0.6
 
-    # Centerline lock
-    mid_mask = (x_dense > 0.4) & (x_dense < 0.6)
-    yc -= np.mean(yc[mid_mask])
+    yc[center_mask] = (
+        (1 - weights) * yc[center_mask] +
+        weights * yc_trend
+    )
 
-    # Final Gaussian smoothing
-    yc = gaussian_filter1d(yc, sigma=5.0)
+    yc = gaussian_filter1d(yc, sigma=2.0)
 
-    # Compute airfoil geometry
     xu, yu, xl, yl = compute_airfoil(x_dense, yc, yt_base)
     coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
 
-    # NeuralFoil evaluation
     try:
         aero = get_aero_from_coordinates(
             coordinates=coords,
@@ -131,43 +137,117 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
         print(f"ERROR: NeuralFoil evaluation failed: {e}")
         return -5.0
 
-    # GB correction
     dy_vec = delta_y_smooth
     dy_cumsum = np.cumsum(dy_vec)
     dy_dx = np.gradient(dy_vec, x_ctrl)
     d2y_dx2 = np.gradient(dy_dx, x_ctrl)
     X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
+
     cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
     cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
     cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
 
-    # CM-priority fitness
-    cm_weight = 20.0
+    cm_weight = 50.0
     fitness = (1 / (1 + cm_weight * abs(cm_corr))) * (1 + cl_corr / cd_corr)
 
-    # Smoothness penalty
     smooth_penalty = np.sum(np.maximum(0, np.abs(np.diff(delta_y_smooth)) - 0.05)**2)
     fitness -= 0.2 * smooth_penalty / num_ctrl
 
-    # Curvature penalty
     d2yc_dx2 = np.gradient(np.gradient(yc, x_dense), x_dense)
-    center_mask_penalty = (x_dense > 0.4) & (x_dense < 0.6)
+    center_mask_penalty = (x_dense > 0.33) & (x_dense < 0.66)
     curvature_violation = np.maximum(0, np.abs(d2yc_dx2[center_mask_penalty]) - 0.8)
     fitness -= 1.5 * np.mean(curvature_violation**2)
 
-    # Delta_y spread penalty
     fitness -= 0.1 * (np.std(delta_y_smooth[:5]) + np.std(delta_y_smooth[5:])) / 0.05
 
-    # Upper/lower surface curvature penalty
     d2yu_dx2 = np.gradient(np.gradient(yu, x_dense), x_dense)
     d2yl_dx2 = np.gradient(np.gradient(yl, x_dense), x_dense)
     mask = (x_dense > 0.2) & (x_dense < 0.8)
     fitness -= 0.8 * (np.mean(d2yu_dx2[mask]**2) + np.mean(d2yl_dx2[mask]**2))
 
-    # Minor reward for positive delta_y sum
     fitness += 0.05 * np.sum(np.abs(delta_y_smooth))
 
     return fitness
+
+# ================== CM-ONLY EVALUATION ======================
+def compute_cm_only(genome, config, target_aoa):
+    net = neat.nn.FeedForwardNetwork.create(genome, config)
+
+    X_input_net = np.hstack([y_ctrl_base, target_aoa]).reshape(1, -1)
+    raw_output = np.array(net.activate(X_input_net.flatten()))[:num_ctrl]
+    delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
+    delta_y_smooth = gaussian_filter1d(delta_y, sigma=2.0)
+    y_ctrl = y_ctrl_base + delta_y_smooth
+
+    yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
+    yc = gaussian_filter1d(yc, sigma=2.0)
+
+    xu, yu, xl, yl = compute_airfoil(x_dense, yc, yt_base)
+    coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
+
+    aero = get_aero_from_coordinates(
+        coordinates=coords,
+        alpha=[target_aoa],
+        Re=REYNOLDS,
+        model_size="xxxlarge",
+        n_crit=9.0,
+        xtr_upper=1.0,
+        xtr_lower=1.0
+    )
+
+    cm_nf = aero["CM"][0]
+
+    dy_vec = delta_y_smooth
+    dy_cumsum = np.cumsum(dy_vec)
+    dy_dx = np.gradient(dy_vec, x_ctrl)
+    d2y_dx2 = np.gradient(dy_dx, x_ctrl)
+
+    X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
+    cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
+
+    return cm_corr
+
+# ================== CL/CD-ONLY EVALUATION ===================
+# >>> ADDED
+def compute_clcd_only(genome, config, target_aoa):
+    net = neat.nn.FeedForwardNetwork.create(genome, config)
+
+    X_input_net = np.hstack([y_ctrl_base, target_aoa]).reshape(1, -1)
+    raw_output = np.array(net.activate(X_input_net.flatten()))[:num_ctrl]
+    delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
+    delta_y_smooth = gaussian_filter1d(delta_y, sigma=2.0)
+    y_ctrl = y_ctrl_base + delta_y_smooth
+
+    yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
+    yc = gaussian_filter1d(yc, sigma=2.0)
+
+    xu, yu, xl, yl = compute_airfoil(x_dense, yc, yt_base)
+    coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
+
+    aero = get_aero_from_coordinates(
+        coordinates=coords,
+        alpha=[target_aoa],
+        Re=REYNOLDS,
+        model_size="xxxlarge",
+        n_crit=9.0,
+        xtr_upper=1.0,
+        xtr_lower=1.0
+    )
+
+    cl_nf = aero["CL"][0]
+    cd_nf = aero["CD"][0]
+
+    dy_vec = delta_y_smooth
+    dy_cumsum = np.cumsum(dy_vec)
+    dy_dx = np.gradient(dy_vec, x_ctrl)
+    d2y_dx2 = np.gradient(dy_dx, x_ctrl)
+
+    X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
+
+    cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
+    cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
+
+    return cl_corr / cd_corr
 
 # ================== NEAT TRAINING ===========================
 def train_for_aoa(target_aoa, generations=50):
@@ -180,7 +260,9 @@ def train_for_aoa(target_aoa, generations=50):
     )
     pop = neat.Population(config)
     pop.add_reporter(neat.StdOutReporter(True))
-    pop.add_reporter(neat.StatisticsReporter())
+
+    stats = neat.StatisticsReporter()
+    pop.add_reporter(stats)
 
     def eval_genomes(genomes, config):
         for gid, genome in genomes:
@@ -188,10 +270,56 @@ def train_for_aoa(target_aoa, generations=50):
 
     winner = pop.run(eval_genomes, generations)
 
+    draw_net(
+        config,
+        winner,
+        view=True,
+        filename=f"BestGenomes/best_network_aoa{int(target_aoa)}"
+    )
+
     os.makedirs("BestGenomes", exist_ok=True)
     with open(f"BestGenomes/best_genome_nf_aoa{int(target_aoa)}.pkl", "wb") as f:
         pickle.dump(winner, f)
+
+    # ================== CM CONVERGENCE PLOT ==================
+    cm_history = []
+    for genome in stats.most_fit_genomes:
+        try:
+            cm = compute_cm_only(genome, config, target_aoa)
+            cm_history.append(abs(cm))
+        except Exception:
+            cm_history.append(np.nan)
+
+    plt.figure()
+    plt.plot(cm_history)
+    plt.xlabel("Generation")
+    plt.ylabel("|Corrected CM|")
+    plt.title("Evolutionary Convergence of Pitching Moment")
+    plt.grid(True)
+    os.makedirs("Figures", exist_ok=True)
+    plt.savefig(f"Figures/cm_convergence_aoa{int(target_aoa)}.png", dpi=300)
+    plt.show()
+
+    # ================== CL/CD CONVERGENCE PLOT ===============
+    # >>> ADDED
+    clcd_history = []
+    for genome in stats.most_fit_genomes:
+        try:
+            clcd = compute_clcd_only(genome, config, target_aoa)
+            clcd_history.append(clcd)
+        except Exception:
+            clcd_history.append(np.nan)
+
+    plt.figure()
+    plt.plot(clcd_history)
+    plt.xlabel("Generation")
+    plt.ylabel("Corrected CL/CD")
+    plt.title("Evolutionary Convergence of Lift-to-Drag Ratio")
+    plt.grid(True)
+    plt.savefig(f"Figures/clcd_convergence_aoa{int(target_aoa)}.png", dpi=300)
+    plt.show()
+
     print("✅ Training complete!")
 
 # ================== RUN TRAINING ===========================
-train_for_aoa(5.0, generations=20)
+train_for_aoa(5.0, generations=100)

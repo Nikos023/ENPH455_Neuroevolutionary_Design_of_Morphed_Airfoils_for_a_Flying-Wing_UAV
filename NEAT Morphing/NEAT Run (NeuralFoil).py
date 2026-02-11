@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NEAT Airfoil Tester with NeuralFoil + GB Correction (Smooth Geometry)
-- Loads a trained genome (best_genome_nf_aoaX.pkl)
-- Predicts control point offsets
-- Generates smoothly morphed airfoil geometry
-- Applies smooth center-region lock + centerline lock
-- Evaluates corrected aerodynamic coefficients using NeuralFoil + GB models
-- Plots smooth airfoil and saves .txt and .dat files for XFOIL
+NEAT Airfoil Tester with NeuralFoil + GB Correction (Training-Consistent Geometry)
+- Matches geometry processing used during NEAT training
+- Ensures CM, CL, CD consistency with convergence plots
 """
 
 import neat
@@ -24,7 +20,7 @@ from neuralfoil import get_aero_from_coordinates
 config_path = "NEAT Config Single Genome.ini"
 best_genome_file = "BestGenomes/best_genome_nf_aoa5.pkl"
 output_name = "NEAT_airfoil_10ctrl"
-AoA = 5.0  # target angle of attack in degrees
+AoA = 5.0
 
 num_ctrl = 10
 n_each_side = num_ctrl // 2
@@ -38,12 +34,17 @@ x_dense = (1 - np.cos(beta)) / 2
 
 # Base airfoil parameters
 m, p, t = 0.02, 0.4, 0.12
-yt_base = 5 * t * (0.2969*np.sqrt(x_dense) - 0.126*x_dense
-                   - 0.3516*x_dense**2 + 0.2843*x_dense**3
-                   - 0.1015*x_dense**4)
+yt_base = 5 * t * (
+    0.2969*np.sqrt(x_dense)
+    - 0.126*x_dense
+    - 0.3516*x_dense**2
+    + 0.2843*x_dense**3
+    - 0.1015*x_dense**4
+)
 
-# Max delta_y for each control point (as in training)
-max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
+#max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
+#max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
+max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
 
 # ================== LOAD GB MODELS ========================
 model_dir = "../Comparison/Comparison Results/global_model"
@@ -65,8 +66,8 @@ def y_ctrl_base_function():
 
 def smooth_camber(x_ctrl, y_ctrl, x_dense):
     spline = make_interp_spline(x_ctrl, y_ctrl, k=3)
-    yc_dense = spline(x_dense)
-    return gaussian_filter1d(yc_dense, sigma=1.2)
+    yc = spline(x_dense)
+    return gaussian_filter1d(yc, sigma=1.2)
 
 def compute_airfoil(x, yc, yt):
     dyc_dx = np.gradient(yc, x)
@@ -80,34 +81,33 @@ def compute_airfoil(x, yc, yt):
 def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
     coords_upper = np.vstack([xu[::-1], yu[::-1]]).T
     coords_lower = np.vstack([xl, yl]).T
-    coords = np.vstack([coords_upper, coords_lower[1:]])
-    return coords
+    return np.vstack([coords_upper, coords_lower[1:]])
 
 def apply_gb_correction(delta_y, xu, yu, xl, yl, AoA):
     dy_vec = delta_y
     dy_cumsum = np.cumsum(dy_vec)
     dy_dx = np.gradient(dy_vec, x_ctrl)
     d2y_dx2 = np.gradient(dy_dx, x_ctrl)
-    X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, AoA]).reshape(1, -1)
+
+    X_input_gb = np.hstack(
+        [dy_vec, dy_cumsum, dy_dx, d2y_dx2, AoA]
+    ).reshape(1, -1)
 
     coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
 
-    try:
-        aero_nf = get_aero_from_coordinates(
-            coordinates=coords,
-            alpha=[AoA],
-            Re=1e6,
-            model_size="xxxlarge",
-            n_crit=9.0,
-            xtr_upper=1.0,
-            xtr_lower=1.0
-        )
-        cl_nf = aero_nf["CL"][0]
-        cd_nf = aero_nf["CD"][0]
-        cm_nf = aero_nf["CM"][0]
-    except Exception as e:
-        print(f"⚠️ NeuralFoil evaluation failed: {e}")
-        return None, None, None
+    aero = get_aero_from_coordinates(
+        coordinates=coords,
+        alpha=[AoA],
+        Re=5e5,
+        model_size="xxxlarge",
+        n_crit=9.0,
+        xtr_upper=1.0,
+        xtr_lower=1.0
+    )
+
+    cl_nf = aero["CL"][0]
+    cd_nf = aero["CD"][0]
+    cm_nf = aero["CM"][0]
 
     cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
     cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-5)
@@ -124,93 +124,107 @@ config = neat.Config(
     config_path
 )
 
-if best_genome_file and os.path.exists(best_genome_file):
-    print(f"📂 Loading trained genome from {best_genome_file}...")
-    with open(best_genome_file, "rb") as f:
-        genome = pickle.load(f)
-    net = neat.nn.FeedForwardNetwork.create(genome, config)
+if not os.path.exists(best_genome_file):
+    raise FileNotFoundError("No trained genome found.")
 
-    # ================== PREDICT OFFSETS =====================
-    y_ctrl_base = y_ctrl_base_function()
-    X_input = np.hstack([y_ctrl_base, AoA]).reshape(1, -1)
-    raw_output = np.array(net.activate(X_input.flatten()))[:num_ctrl]
-    delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
+with open(best_genome_file, "rb") as f:
+    genome = pickle.load(f)
 
-    # Apply offsets and smooth
-    y_ctrl_new = y_ctrl_base + delta_y
-    yc_new = smooth_camber(x_ctrl, y_ctrl_new, x_dense)
+net = neat.nn.FeedForwardNetwork.create(genome, config)
 
-    # ================== SMOOTH CENTER LOCK (EVEN SMOOTHER) ==================
-    center_start, center_end = 0.3, 0.7  # wider blending region
-    center_mask = (x_dense > center_start) & (x_dense < center_end)
-    blend_x = (x_dense[center_mask] - center_start) / (center_end - center_start)
-    weights = 0.5 * (1 - np.cos(np.pi * blend_x))  # cosine taper
-    yc_new[center_mask] = (1 - weights) * yc_new[center_mask] + weights * yc_base_function(x_dense)[center_mask]
+# ================== PREDICT OFFSETS =====================
+y_ctrl_base = y_ctrl_base_function()
+X_input = np.hstack([y_ctrl_base, AoA]).reshape(1, -1)
+raw_output = np.array(net.activate(X_input.flatten()))[:num_ctrl]
 
-    # ================== SMOOTH CAMBER LINE ==================
-    yc_new = gaussian_filter1d(yc_new, sigma=8.0)  # increased sigma for smoother camber
+delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
+delta_y = gaussian_filter1d(delta_y, sigma=2.0)  # MATCH TRAINING
 
-    # ================== CENTERLINE LOCK =====================
-    mid_mask = (x_dense > 0.4) & (x_dense < 0.6)
-    yc_new -= np.mean(yc_new[mid_mask])
+y_ctrl_new = y_ctrl_base + delta_y
+yc_new = smooth_camber(x_ctrl, y_ctrl_new, x_dense)
 
-    xu, yu, xl, yl = compute_airfoil(x_dense, yc_new, yt_base)
+# ================== TRAINING-CONSISTENT CENTER LOCK ==================
+center_start, center_end = 0.33, 0.66
+center_mask = (x_dense > center_start) & (x_dense < center_end)
 
-    # ================== PLOT SMOOTH AIRFOIL ==================
-    plt.figure(figsize=(12, 6))
-    plt.plot(xu, yu, 'b-', lw=2, label="Upper Surface")
-    plt.plot(xl, yl, 'b-', lw=2, label="Lower Surface")
-    plt.plot(x_dense, yc_new, 'r--', lw=1.5, label="Camber Line (smoothed)")
-    plt.axis("equal")
-    plt.grid(True)
-    plt.xlabel("x (chord)")
-    plt.ylabel("y")
-    plt.title(f"NEAT Predicted Airfoil - AoA = {AoA}°")
-    plt.legend()
-    plt.show()
+coeffs = np.polyfit(
+    x_dense[center_mask],
+    yc_base_function(x_dense)[center_mask],
+    1
+)
+yc_trend = np.polyval(coeffs, x_dense[center_mask])
 
-    # ================== SAVE FILES ==========================
-    os.makedirs("Geometry", exist_ok=True)
+blend_x = (x_dense[center_mask] - center_start) / (center_end - center_start)
+weights = 0.5 * (1 - np.cos(np.pi * blend_x))
+weights *= 0.6  # MATCH TRAINING
 
-    # TXT
-    txt_filename = f"Geometry/{output_name}.txt"
-    with open(txt_filename, "w") as f:
-        f.write("=== Airfoil Parameters ===\n")
-        f.write(f"m = {m}\n")
-        f.write(f"p = {p}\n")
-        f.write(f"t = {t}\n\n")
-        f.write("=== Control Points + Offsets ===\n")
-        for xi, yi, off in zip(x_ctrl, y_ctrl_new, delta_y):
-            f.write(f"{xi:.5f}, {yi:.5f}, {off:.5f}\n")
-        f.write("\n=== Upper Surface ===\n")
-        for xi, yi in zip(xu, yu):
-            f.write(f"{xi:.5f}, {yi:.5f}\n")
-        f.write("\n=== Lower Surface ===\n")
-        for xi, yi in zip(xl, yl):
-            f.write(f"{xi:.5f}, {yi:.5f}\n")
-    print(f"✅ Airfoil saved as {txt_filename}")
+yc_new[center_mask] = (
+    (1 - weights) * yc_new[center_mask] +
+    weights * yc_trend
+)
 
-    # DAT for XFOIL
-    N = 100
-    beta_cos = np.linspace(0, np.pi, N)
-    x_cos = 0.5*(1 - np.cos(beta_cos))
-    y_upper_interp = np.interp(x_cos, xu, yu)
-    y_lower_interp = np.interp(x_cos, xl, yl)
-    x_all = np.concatenate([x_cos[::-1], x_cos[1:]])
-    y_all = np.concatenate([y_upper_interp[::-1], y_lower_interp[1:]])
-    dat_filename = f"Geometry/{output_name}.dat"
-    with open(dat_filename, "w") as f:
-        f.write(f"{output_name}\n")
-        for xi, yi in zip(x_all, y_all):
-            f.write(f"{xi:.6f} {yi:.6f}\n")
-    print(f"✅ XFOIL-compatible file saved as {dat_filename}")
+yc_new = gaussian_filter1d(yc_new, sigma=2.0)  # MATCH TRAINING
 
-    # ================== NEURALFOIL + GB CORRECTION ==================
-    cl_corr, cd_corr, cm_corr = apply_gb_correction(delta_y, xu, yu, xl, yl, AoA)
-    if cl_corr is not None:
-        print(f"📊 Corrected Aerodynamics @ AoA={AoA}° -> CL: {cl_corr:.4f}, CD: {cd_corr:.6f}, CM: {cm_corr:.4f}")
-    else:
-        print("⚠️ NeuralFoil + GB correction failed.")
+xu, yu, xl, yl = compute_airfoil(x_dense, yc_new, yt_base)
 
-else:
-    print("⚠️ No trained genome found. Please run training first.")
+# ================== PLOTS ==================
+plt.figure(figsize=(12, 6))
+plt.plot(xu, yu, 'b-', lw=2, label="Upper Surface")
+plt.plot(xl, yl, 'b-', lw=2, label="Lower Surface")
+plt.plot(x_dense, yc_new, 'r--', lw=1.5, label="Camber Line")
+plt.axis("equal")
+plt.grid(True)
+plt.xlabel("x (chord)")
+plt.ylabel("y")
+plt.title(f"NEAT Airfoil (Training-Consistent) @ AoA = {AoA}°")
+plt.legend()
+plt.show()
+
+# ================== NACA 2412 CAMBER LINE ==================
+yc_naca = yc_base_function(x_dense)
+
+# ================== OVERLAY WITH NACA 2412 ==================
+naca_file = "../Morphing/airfoil_xfoil_2412.dat"
+data = np.loadtxt(naca_file, skiprows=1)
+x_ref, y_ref = data[:, 0], data[:, 1]
+
+plt.figure(figsize=(12, 6))
+plt.plot(xu, yu, 'b-', lw=2, label="Upper Surface (NEAT)")
+plt.plot(xl, yl, 'b-', lw=2, label="Lower Surface (NEAT)")
+plt.plot(x_dense, yc_new, 'r--', lw=1.5, label="Camber Line (NEAT)")
+plt.plot(x_dense, yc_naca, 'g-.', lw=1.5, label="Camber Line (NACA 2412)")
+plt.plot(x_ref, y_ref, 'k--', lw=1.5, label="NACA 2412 (surface)")
+plt.axis("equal")
+plt.grid(True)
+plt.xlabel("x (chord)")
+plt.ylabel("y")
+plt.title(f"NEAT Airfoil vs NACA 2412 @ AoA = {AoA}°")
+plt.legend()
+plt.show()
+
+# ================== SAVE FILES ==========================
+os.makedirs("Geometry", exist_ok=True)
+
+txt_filename = f"Geometry/{output_name}.txt"
+with open(txt_filename, "w") as f:
+    f.write("=== Control Points + Offsets ===\n")
+    for xi, yi, off in zip(x_ctrl, y_ctrl_new, delta_y):
+        f.write(f"{xi:.5f}, {yi:.5f}, {off:.5f}\n")
+
+dat_filename = f"Geometry/{output_name}.dat"
+N = 100
+beta_cos = np.linspace(0, np.pi, N)
+x_cos = 0.5*(1 - np.cos(beta_cos))
+y_upper = np.interp(x_cos, xu, yu)
+y_lower = np.interp(x_cos, xl, yl)
+x_all = np.concatenate([x_cos[::-1], x_cos[1:]])
+y_all = np.concatenate([y_upper[::-1], y_lower[1:]])
+
+with open(dat_filename, "w") as f:
+    f.write(f"{output_name}\n")
+    for xi, yi in zip(x_all, y_all):
+        f.write(f"{xi:.6f} {yi:.6f}\n")
+
+# ================== AERODYNAMICS ==================
+cl_corr, cd_corr, cm_corr = apply_gb_correction(delta_y, xu, yu, xl, yl, AoA)
+print(f"📊 Corrected @ AoA={AoA}° → CL={cl_corr:.6f}, CD={cd_corr:.6f}, CM={cm_corr:.10f}, CL/CD={cl_corr/cd_corr:.6f}")

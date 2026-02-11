@@ -230,4 +230,4 @@ def train_for_aoa(target_aoa, generations=100):
     print(f"✅ Saved {fname}")
 
 # ================== RUN TWO INDEPENDENT TRAINS =============
-train_for_aoa(5.0, generations=10)
+train_for_aoa(5.0, generations=20)
