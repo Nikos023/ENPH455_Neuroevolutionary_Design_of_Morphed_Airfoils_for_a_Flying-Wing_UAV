@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NEAT Airfoil Tester with NeuralFoil + GB Correction (Training-Consistent Geometry)
+NEAT Airfoil Tester with NeuralFoil + GB Correction (Training-Consistent Geometry(Not))
 - Matches geometry processing used during NEAT training
 - Ensures CM, CL, CD consistency with convergence plots
 """
@@ -43,8 +43,9 @@ yt_base = 5 * t * (
 )
 
 #max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
-#max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
-max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
+max_offsets = np.array([0.12,0.10,0.08,0.06,0.2,0.01,0.04,0.06,0.08,0.10])
+#max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
+#max_offsets = np.array([0.20,0.16,0.12,0.09,0.01,0.01,0.09,0.012,0.16,0.20])
 
 # ================== LOAD GB MODELS ========================
 model_dir = "../Comparison/Comparison Results/global_model"
@@ -177,6 +178,32 @@ plt.grid(True)
 plt.xlabel("x (chord)")
 plt.ylabel("y")
 plt.title(f"NEAT Airfoil (Training-Consistent) @ AoA = {AoA}°")
+plt.legend()
+plt.show()
+
+# ================== ROTATED AIRFOIL @ AoA ==================
+theta = -np.deg2rad(AoA)
+
+# Rotation matrix about origin (leading edge)
+def rotate(x, y, theta):
+    x_rot = x*np.cos(theta) - y*np.sin(theta)
+    y_rot = x*np.sin(theta) + y*np.cos(theta)
+    return x_rot, y_rot
+
+xu_rot, yu_rot = rotate(xu, yu, theta)
+xl_rot, yl_rot = rotate(xl, yl, theta)
+xc_rot, yc_rot = rotate(x_dense, yc_new, theta)
+
+plt.figure(figsize=(12, 6))
+plt.plot(xu_rot, yu_rot, 'b-', lw=2, label="Upper Surface (Rotated)")
+plt.plot(xl_rot, yl_rot, 'b-', lw=2, label="Lower Surface (Rotated)")
+plt.plot(xc_rot, yc_rot, 'r--', lw=1.5, label="Camber Line (Rotated)")
+plt.axhline(0, linestyle='--', linewidth=1)
+plt.axis("equal")
+plt.grid(True)
+plt.xlabel("x (global)")
+plt.ylabel("y (global)")
+plt.title(f"NEAT Airfoil Physically Rotated to AoA = {AoA}°")
 plt.legend()
 plt.show()
 

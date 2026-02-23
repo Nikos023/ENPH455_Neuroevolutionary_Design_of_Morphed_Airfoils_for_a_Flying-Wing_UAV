@@ -52,8 +52,9 @@ y_ctrl_base = np.interp(x_ctrl, x_dense, yc_base)
 
 # Max delta_y per control point
 #max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
-#max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
-max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
+max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
+#max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
+#max_offsets = np.array([0.20,0.16,0.12,0.09,0.01,0.01,0.09,0.012,0.16,0.20])
 
 # ================== HELPER FUNCTIONS ========================
 def smooth_camber(x_ctrl, y_ctrl, x_dense):
@@ -147,8 +148,20 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
     cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
 
-    cm_weight = 50.0
-    fitness = (1 / (1 + cm_weight * abs(cm_corr))) * (1 + cl_corr / cd_corr)
+    cm_weight = 1000.0
+    ld_weight = 50.0
+
+    CM_LIMIT = 0.001
+
+    # symmetric band constraint
+    cm_violation = max(0.0, abs(cm_corr) - CM_LIMIT)
+
+    # normalized penalty (IMPORTANT for scaling)
+    cm_term = -cm_weight * (cm_violation / CM_LIMIT) ** 2
+
+    ld_term = ld_weight * (cl_corr / cd_corr)
+
+    fitness = cm_term + ld_term
 
     smooth_penalty = np.sum(np.maximum(0, np.abs(np.diff(delta_y_smooth)) - 0.05)**2)
     fitness -= 0.2 * smooth_penalty / num_ctrl

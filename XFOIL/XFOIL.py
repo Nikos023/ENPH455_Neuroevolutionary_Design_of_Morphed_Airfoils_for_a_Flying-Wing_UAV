@@ -33,8 +33,8 @@ alpha_points = np.linspace(-5, 12, 200)
 # === START / END CONTROL (ONLY CHANGE) ======================
 # ============================================================
 
-START_INDEX = 1468    # change this to restart
-END_INDEX = 2000
+START_INDEX = 3434    # change this to restart
+END_INDEX = 3434
 
 # ============================================================
 # === UTILITY FUNCTIONS ======================================
@@ -91,7 +91,7 @@ def repanel_airfoil(xu, yu, xl, yl, n_points=200):
 
 for i in range(START_INDEX, END_INDEX + 1):
     # Construct file paths
-    num_str = f"{i:03d}"  # zero-padded number
+    num_str = f"{i:04d}"  # zero-padded number
     airfoil_file = f"{airfoil_base_path}{num_str}{airfoil_ext}"
     repaneled_file = os.path.join(repaneled_dir, f"{repaneled_base}{num_str}.dat")
     polar_file = os.path.join(results_dir, f"polar_XFOIL_{num_str}_Re{int(Re):.0f}.txt")

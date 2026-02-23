@@ -60,7 +60,7 @@ def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
     return coords
 
 
-def evaluate_airfoil(coords, alphas, Re=5e5, model_size="xxxlarge", n_crit=9.0, xtr_upper=1.0, xtr_lower=1.0):
+def evaluate_airfoil(coords, alphas, Re=1e6, model_size="xxxlarge", n_crit=9.0, xtr_upper=1.0, xtr_lower=1.0):
     """Evaluates airfoil using NeuralFoil for a given AoA sweep."""
     aero = nf.get_aero_from_coordinates(
         coordinates=coords,
@@ -106,8 +106,8 @@ def main():
     os.makedirs(results_dir, exist_ok=True)
 
     # Loop through airfoils 000 to 914 (inclusive)
-    for i in range(2001):
-        num_str = f"{i:03d}"  # zero-padded
+    for i in range(5001):
+        num_str = f"{i:04d}"  # zero-padded
         filename = f"../Morphing/Geometry/airfoil_points_{num_str}.txt"
 
         if not os.path.exists(filename):

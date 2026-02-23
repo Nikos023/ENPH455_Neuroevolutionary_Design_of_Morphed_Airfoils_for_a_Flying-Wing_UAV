@@ -10,7 +10,7 @@ import joblib
 # === CONFIGURATION ==========================================
 # ============================================================
 
-geom_dir = "../Morphing/Geometry/"  # folder with saved .txt airfoils
+geom_dir = "../Morphing/Geometry(Not)/"  # folder with saved .txt airfoils
 xfoil_dir = "../XFOIL/Simulation Results/"
 nf_dir = "../NeuralFoil/Simulation Results/"
 comparison_dir = "../Comparison/Comparison Results"

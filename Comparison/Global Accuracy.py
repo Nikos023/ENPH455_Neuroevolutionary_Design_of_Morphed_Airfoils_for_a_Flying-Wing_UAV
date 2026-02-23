@@ -9,7 +9,7 @@ import joblib
 # === CONFIGURATION ==========================================
 # ============================================================
 
-geom_dir = "../Morphing/Geometry/"
+geom_dir = "../Morphing/Geometry(Not)/"
 xfoil_dir = "../XFOIL/Simulation Results/"
 nf_dir = "../NeuralFoil/Simulation Results/"
 comparison_dir = "../Comparison/Comparison Results"
@@ -114,7 +114,7 @@ def main():
             skipped += 1
             continue
 
-        # --- Geometry Features ---
+        # --- Geometry(Not) Features ---
         x_ctrl, y_ctrl = read_geometry_file(geom_file)
         dy = y_ctrl - y_base
 

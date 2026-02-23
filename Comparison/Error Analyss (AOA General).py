@@ -195,9 +195,9 @@ if use_sklearn:
     model_cd_sgd.fit(X, y_cd)
     model_cm_sgd.fit(X, y_cm)
 
-    joblib.dump(model_cl_sgd, os.path.join(model_dir, "global_cl_sgd_2000_samples.joblib"))
-    joblib.dump(model_cd_sgd, os.path.join(model_dir, "global_cd_sgd_2000_samples.joblib"))
-    joblib.dump(model_cm_sgd, os.path.join(model_dir, "global_cm_sgd_2000_samples.joblib"))
+    joblib.dump(model_cl_sgd, os.path.join(model_dir, "global_cl_sgd_5000_samples.joblib"))
+    joblib.dump(model_cd_sgd, os.path.join(model_dir, "global_cd_sgd_5000_samples.joblib"))
+    joblib.dump(model_cm_sgd, os.path.join(model_dir, "global_cm_sgd_5000_samples.joblib"))
 
     print("\nTraining Gradient Boosting models...")
 
@@ -232,9 +232,9 @@ if use_sklearn:
     model_cd_gb.fit(X, y_cd)
     model_cm_gb.fit(X, y_cm)
 
-    joblib.dump(model_cl_gb, os.path.join(model_dir, "global_cl_gb_2000_samples.joblib"))
-    joblib.dump(model_cd_gb, os.path.join(model_dir, "global_cd_gb_2000_samples.joblib"))
-    joblib.dump(model_cm_gb, os.path.join(model_dir, "global_cm_gb_2000_samples.joblib"))
+    joblib.dump(model_cl_gb, os.path.join(model_dir, "global_cl_gb_5000_samples.joblib"))
+    joblib.dump(model_cd_gb, os.path.join(model_dir, "global_cd_gb_5000_samples.joblib"))
+    joblib.dump(model_cm_gb, os.path.join(model_dir, "global_cm_gb_5000_samples.joblib"))
 
     print("\n✅ All models saved: Huber-SGD and Gradient Boosting")
 
@@ -257,7 +257,7 @@ pd.DataFrame([{
     "n_samples": len(X),
     "method": "HuberSGD + GradientBoosting" if use_sklearn else "OLS",
     "poly_degree": 4 if use_sklearn else "N/A"
-}]).to_csv(os.path.join(model_dir, "model_summary_1000_samples.csv"), index=False)
+}]).to_csv(os.path.join(model_dir, "model_summary_5000_samples.csv"), index=False)
 
 print("\n📄 Model summary written to model_summary_1000_samples.csv")
 print("🎉 Training complete — Global model ready!")

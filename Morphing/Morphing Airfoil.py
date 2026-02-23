@@ -224,9 +224,9 @@ def save_with_filename(name):
         return
 
     base_name = name.strip()
-    os.makedirs("Geometry", exist_ok=True)
-    txt_filename = f"Geometry/{base_name}.txt"
-    dat_filename = f"Geometry/{base_name}.dat"
+    os.makedirs("Geometry(Not)", exist_ok=True)
+    txt_filename = f"Geometry(Not)/{base_name}.txt"
+    dat_filename = f"Geometry(Not)/{base_name}.dat"
 
     yc = smooth_camber(x_ctrl, y_ctrl, x)
     xu, yu, xl, yl = compute_airfoil(x, yc, yt_base)

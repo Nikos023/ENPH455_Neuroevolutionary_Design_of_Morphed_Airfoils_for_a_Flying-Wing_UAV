@@ -17,7 +17,7 @@ from scipy.ndimage import gaussian_filter1d
 import joblib
 
 # ================== CONFIGURATION ===========================
-geom_dir = "../Morphing/Geometry/"
+geom_dir = "../Morphing/Geometry(Not)/"
 nf_dir = "../NeuralFoil/Simulation Results/"
 comparison_dir = "../Comparison/Comparison Results"
 model_dir = "../Comparison/Comparison Results/global_model"
@@ -126,7 +126,7 @@ def compute_fitness(genome, config):
     ])
     delta_y *= max_offsets
 
-    # ---------------- Geometry construction ----------------
+    # ---------------- Geometry(Not) construction ----------------
     y_ctrl = y_ctrl_base + delta_y
     yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
     xu, yu, xl, yl = compute_airfoil(x_dense, yc, yt_base)
