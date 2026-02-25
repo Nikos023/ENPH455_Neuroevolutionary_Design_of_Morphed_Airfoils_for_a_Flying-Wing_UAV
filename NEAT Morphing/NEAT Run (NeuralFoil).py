@@ -18,9 +18,9 @@ from neuralfoil import get_aero_from_coordinates
 
 # ================== CONFIG ===============================
 config_path = "NEAT Config Single Genome.ini"
-best_genome_file = "BestGenomes/best_genome_nf_aoa5.pkl"
+best_genome_file = "BestGenomes/best_genome_nf_aoa10.pkl"
 output_name = "NEAT_airfoil_10ctrl"
-AoA = 5.0
+AoA = 10.0
 
 num_ctrl = 10
 n_each_side = num_ctrl // 2
@@ -43,15 +43,15 @@ yt_base = 5 * t * (
 )
 
 #max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
-max_offsets = np.array([0.12,0.10,0.08,0.06,0.2,0.01,0.04,0.06,0.08,0.10])
+max_offsets = np.array([0.12,0.10,0.08,0.06,0.02,0.01,0.04,0.06,0.08,0.10])
 #max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
 #max_offsets = np.array([0.20,0.16,0.12,0.09,0.01,0.01,0.09,0.012,0.16,0.20])
 
 # ================== LOAD GB MODELS ========================
 model_dir = "../Comparison/Comparison Results/global_model"
-model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_2000_samples.joblib"))
-model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_2000_samples.joblib"))
-model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_2000_samples.joblib"))
+model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_5000_samples.joblib"))
+model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_5000_samples.joblib"))
+model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_5000_samples.joblib"))
 
 # ================== HELPER FUNCTIONS ====================
 def yc_base_function(x):
