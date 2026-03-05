@@ -60,7 +60,7 @@ def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
     return coords
 
 
-def evaluate_airfoil(coords, alphas, Re=1e6, model_size="xxxlarge", n_crit=9.0, xtr_upper=1.0, xtr_lower=1.0):
+def evaluate_airfoil(coords, alphas, Re=3e5, model_size="xxxlarge", n_crit=9.0, xtr_upper=1.0, xtr_lower=1.0):
     """Evaluates airfoil using NeuralFoil for a given AoA sweep."""
     aero = nf.get_aero_from_coordinates(
         coordinates=coords,
@@ -102,7 +102,7 @@ def save_polar_file(filename, alphas, CL, CD, Cm=None):
 
 def main():
     # Directory to save results
-    results_dir = "Simulation Results"
+    results_dir = "Simulation Results 5000Re3e5"
     os.makedirs(results_dir, exist_ok=True)
 
     # Loop through airfoils 000 to 914 (inclusive)
@@ -130,7 +130,7 @@ def main():
 
         # Define AoA range and Reynolds number
         alphas = np.linspace(-5, 12, 200)
-        Re = 1e6
+        Re = 3e5
 
         # Evaluate aerodynamic performance
         print("🧠 Running NeuralFoil aerodynamic evaluation...")

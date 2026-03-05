@@ -10,8 +10,8 @@ from collections import defaultdict
 # ============================================================
 
 geom_dir = "../Morphing/Geometry(Not)/"  # folder with saved .txt airfoils
-xfoil_dir = "../XFOIL/Simulation Results/"
-nf_dir = "../NeuralFoil/Simulation Results/"
+xfoil_dir = "../XFOIL/Simulation Results 5000Re1e6/"
+nf_dir = "../NeuralFoil/Simulation Results 5000Re1e6 5000Re1e6/"
 comparison_dir = "../Comparison/Comparison Results"
 Re = 1e6
 
@@ -206,6 +206,6 @@ for a in sorted(correction_models.keys()):
         "n_samples": meta.get("n_samples", np.nan),
         "method": meta.get("method", "RidgeCV")
     })
-pd.DataFrame(summary_rows).to_csv(os.path.join(model_dir, "model_summary_1000_samples.csv"), index=False)
+pd.DataFrame(summary_rows).to_csv(os.path.join(model_dir, "model_summary_1000Re1e6_samples.csv"), index=False)
 print(f"\n✅ Trained per-AoA models saved into {model_dir}")
-print("Model summary written to model_summary_1000_samples.csv")
+print("Model summary written to model_summary_1000Re1e6_samples.csv")

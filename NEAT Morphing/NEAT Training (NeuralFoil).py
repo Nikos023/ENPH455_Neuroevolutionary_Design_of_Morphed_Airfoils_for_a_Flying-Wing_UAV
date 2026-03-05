@@ -18,15 +18,15 @@ from scipy.ndimage import gaussian_filter1d
 import joblib
 from neuralfoil import get_aero_from_coordinates
 from Visualize import draw_net
-
-# >>> ADDED
 import matplotlib.pyplot as plt
+
+REYNOLDS = 3e5
+re_folder = f"{REYNOLDS:.0e}".replace("+0", "").replace("+", "")
 
 # ================== BASE PARAMETERS =========================
 m, p, t = 0.02, 0.4, 0.12
 num_points = 1000
 num_ctrl = 10
-REYNOLDS = 5e5
 
 # Cosine spacing
 beta = np.linspace(0, np.pi, num_points)
@@ -52,7 +52,7 @@ y_ctrl_base = np.interp(x_ctrl, x_dense, yc_base)
 
 # Max delta_y per control point
 #max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
-max_offsets = np.array([0.12,0.10,0.08,0.06,0.02,0.01,0.04,0.06,0.08,0.10])
+max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
 #max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
 #max_offsets = np.array([0.20,0.16,0.12,0.09,0.01,0.01,0.09,0.012,0.16,0.20])
 
@@ -78,10 +78,10 @@ def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
     return coords
 
 # ================== LOAD GB MODELS ==========================
-model_dir = "../Comparison/Comparison Results/global_model"
-model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_5000_samples.joblib"))
-model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_5000_samples.joblib"))
-model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_5000_samples.joblib"))
+model_dir = os.path.join("../Comparison/Comparison Results/global_model/5000gb", f"Re{re_folder}")
+model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb.joblib"))
+model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb.joblib"))
+model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
 
 # ================== FITNESS FUNCTION =======================
 def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
@@ -149,9 +149,14 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
 
     cm_weight = 1000.0
-    ld_weight = 60.0
+    ld_weight = 15.0
 
-    CM_LIMIT = 0.001
+    CM_LIMIT = 0.005
+
+    #cm_weight = 1000.0
+    #ld_weight = 5.0
+
+    #CM_LIMIT = 0.001
 
     # symmetric band constraint
     cm_violation = max(0.0, abs(cm_corr) - CM_LIMIT)
@@ -159,8 +164,8 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     # normalized penalty (IMPORTANT for scaling)
     cm_term = -cm_weight * (cm_violation / CM_LIMIT) ** 2
 
-    #ld_term = ld_weight * (cl_corr / cd_corr)
-    ld_term = ld_weight * (abs(cl_corr) / cd_corr)
+    ld_term = ld_weight * (cl_corr / cd_corr)
+    #ld_term = ld_weight * (abs(cl_corr) / cd_corr)
 
     fitness = cm_term + ld_term
 
@@ -291,8 +296,10 @@ def train_for_aoa(target_aoa, generations=50):
         filename=f"BestGenomes/best_network_aoa{int(target_aoa)}"
     )
 
-    os.makedirs("BestGenomes", exist_ok=True)
-    with open(f"BestGenomes/best_genome_nf_aoa{int(target_aoa)}.pkl", "wb") as f:
+    save_dir = os.path.join("BestGenomes", f"Re{re_folder}")
+    os.makedirs(save_dir, exist_ok=True)
+
+    with open(os.path.join(save_dir, f"best_genome_nf_aoa{int(target_aoa)}.pkl"), "wb") as f:
         pickle.dump(winner, f)
 
     # ================== CM CONVERGENCE PLOT ==================
@@ -336,4 +343,4 @@ def train_for_aoa(target_aoa, generations=50):
     print("✅ Training complete!")
 
 # ================== RUN TRAINING ===========================
-train_for_aoa(-5.0, generations=100)
+train_for_aoa(5.0, generations=10)

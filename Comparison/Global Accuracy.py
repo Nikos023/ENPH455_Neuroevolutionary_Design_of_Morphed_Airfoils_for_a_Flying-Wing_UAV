@@ -9,27 +9,33 @@ import joblib
 # === CONFIGURATION ==========================================
 # ============================================================
 
-geom_dir = "../Morphing/Geometry(Not)/"
-xfoil_dir = "../XFOIL/Simulation Results/"
-nf_dir = "../NeuralFoil/Simulation Results/"
+geom_dir = "../Morphing/Geometry/"
 comparison_dir = "../Comparison/Comparison Results"
 
-Re = 1e6
+Re = 3e5
 alpha_common = np.linspace(-5, 12, 200)
 EPS = 1e-6
+MAX_AIRFOILS = 5001
 
-MAX_AIRFOILS = 2001
+# --- Automatic folder / file naming ---
+def format_re(re):
+    return f"{re:.0e}".replace("+0", "").replace("+", "")
 
-os.makedirs(comparison_dir, exist_ok=True)
-model_dir = os.path.join(comparison_dir, "global_model")
+re_folder = f"Re{format_re(Re)}"
+
+xfoil_dir = os.path.join("../XFOIL", f"Simulation Results 5000{re_folder}")
+nf_dir    = os.path.join("../NeuralFoil", f"Simulation Results 5000{re_folder}")
+
+model_dir = os.path.join(comparison_dir, "global_model/5000gb", re_folder)
+os.makedirs(model_dir, exist_ok=True)
 
 # ============================================================
 # === LOAD GLOBAL MODELS =====================================
 # ============================================================
 
-model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_2000_samples.joblib"))
-model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_2000_samples.joblib"))
-model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_2000_samples.joblib"))
+model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb.joblib"))
+model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb.joblib"))
+model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
 
 # ============================================================
 # === FILE READING FUNCTIONS =================================
@@ -95,29 +101,20 @@ def main():
 
     print(f"\n🔍 Found {total_files} airfoils — starting processing\n")
 
-    # ========================================================
-    # === AIRFOIL LOOP (WITH TICKER) =========================
-    # ========================================================
-
     for idx, geom_file in enumerate(geom_files, start=1):
 
         airfoil_id = geom_file.split("_")[-1].split(".")[0]
-        file_xfoil = os.path.join(
-            xfoil_dir, f"polar_XFOIL_{airfoil_id}_Re{int(Re):.0f}.txt"
-        )
-        file_nf = os.path.join(
-            nf_dir, f"polar_NeuralFoil_{airfoil_id}_Re{int(Re):.0f}.txt"
-        )
+        file_xfoil = os.path.join(xfoil_dir, f"polar_XFOIL_{airfoil_id}_Re{int(Re)}.txt")
+        file_nf = os.path.join(nf_dir, f"polar_NeuralFoil_{airfoil_id}_Re{int(Re)}.txt")
 
         if not (os.path.exists(file_xfoil) and os.path.exists(file_nf)):
             print(f"[{idx:4d}/{total_files}] Airfoil {airfoil_id} → skipped")
             skipped += 1
             continue
 
-        # --- Geometry(Not) Features ---
+        # --- Geometry Features ---
         x_ctrl, y_ctrl = read_geometry_file(geom_file)
         dy = y_ctrl - y_base
-
         base_features = np.hstack([
             dy,
             np.cumsum(dy),
@@ -169,7 +166,7 @@ def main():
     print(f"\n✅ Finished: {processed} processed, {skipped} skipped")
 
     # ============================================================
-    # === PLOTTING (UNCHANGED) ==================================
+    # === PLOTTING ==============================================
     # ============================================================
 
     plt.style.use("seaborn-v0_8-whitegrid")
@@ -203,7 +200,7 @@ def main():
     plt.show()
 
     # ============================================================
-    # === FINAL RESULTS SUMMARY ================================
+    # === SUMMARY ===============================================
     # ============================================================
 
     print("\n" + "="*70)
@@ -211,7 +208,7 @@ def main():
     print("="*70)
 
     print(f"Airfoils evaluated:     {processed}")
-    print(f"Reynolds number:        Re = {Re:.2e}")
+    print(f"Reynolds number:        {re_folder}")
     print(f"AoA range:              {alpha_common[0]:.1f}° to {alpha_common[-1]:.1f}°")
 
     nf_all = np.concatenate([np.concatenate(errors_nf[c]) for c in ["Cl","Cd","Cm"]])
@@ -221,15 +218,12 @@ def main():
     mae_corr = mae(corr_all, 0)
     rmse_nf = rmse(nf_all, 0)
     rmse_corr = rmse(corr_all, 0)
-
     improvement = 100 * (mae_nf - mae_corr) / (mae_nf + EPS)
 
     print("\nAggregate Error (All Coefficients, All AoA):")
     print(f"  NeuralFoil  → MAE = {mae_nf:.5f}, RMSE = {rmse_nf:.5f}")
     print(f"  Corrected   → MAE = {mae_corr:.5f}, RMSE = {rmse_corr:.5f}")
     print(f"\nOverall Error Reduction: {improvement:.2f}%")
-
-    print("\nPer-Coefficient Performance Breakdown:")
 
     for coeff, name in zip(["Cl","Cd","Cm"], ["Lift (Cl)", "Drag (Cd)", "Moment (Cm)"]):
         nf_c = np.concatenate(errors_nf[coeff])
@@ -239,7 +233,6 @@ def main():
         mae_corr_c = mae(corr_c, 0)
         rmse_nf_c = rmse(nf_c, 0)
         rmse_corr_c = rmse(corr_c, 0)
-
         improv_c = 100 * (mae_nf_c - mae_corr_c) / (mae_nf_c + EPS)
 
         print(f"\n{name}:")

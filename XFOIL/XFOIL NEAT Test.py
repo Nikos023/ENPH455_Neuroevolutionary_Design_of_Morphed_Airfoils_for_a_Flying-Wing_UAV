@@ -1,6 +1,5 @@
 import subprocess
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 
 # ============================================================
@@ -8,16 +7,14 @@ import os
 # ============================================================
 
 xfoil_path = "/Users/nicholasburen/Downloads/xfoil/bin/xfoil"
-airfoil_base_path = "../Morphing/Geometry/airfoil_points_"  # Base path without number and extension
-airfoil_ext = ".dat"
-
+airfoil_file = "../NEAT Morphing/Geometry/NEAT_airfoil_10ctrl.dat"  # <-- single file
 repaneled_dir = "Repaneled Geometry"
 os.makedirs(repaneled_dir, exist_ok=True)
 
-results_dir = "Simulation Results 5000Re5e5"
+results_dir = "Simulation Results NEAT"
 os.makedirs(results_dir, exist_ok=True)
 
-repaneled_base = "airfoil_xfoil_repaneled_"  # Base name for repaneled files
+repaneled_base = "airfoil_xfoil_repaneled_"  # Base name for repaneled file
 
 # Flow and solver parameters
 Re = 5e5
@@ -28,13 +25,6 @@ panel_count = 300  # Recommended: 150–400 for small UAVs
 
 # Angle of attack sweep (deg)
 alpha_points = np.linspace(-5, 12, 200)
-
-# ============================================================
-# === START / END CONTROL (ONLY CHANGE) ======================
-# ============================================================
-
-START_INDEX = 14    # change this to restart
-END_INDEX = 5000
 
 # ============================================================
 # === UTILITY FUNCTIONS ======================================
@@ -86,69 +76,65 @@ def repanel_airfoil(xu, yu, xl, yl, n_points=200):
     return x_all, y_all
 
 # ============================================================
-# === MAIN LOOP ==============================================
+# === PROCESS SINGLE FILE ===================================
 # ============================================================
 
-for i in range(START_INDEX, END_INDEX + 1):
-    # Construct file paths
-    num_str = f"{i:04d}"  # zero-padded number
-    airfoil_file = f"{airfoil_base_path}{num_str}{airfoil_ext}"
-    repaneled_file = os.path.join(repaneled_dir, f"{repaneled_base}{num_str}.dat")
-    polar_file = os.path.join(results_dir, f"polar_XFOIL_{num_str}_Re{int(Re):.0f}.txt")
+if not os.path.exists(airfoil_file):
+    raise FileNotFoundError(f"Airfoil file not found: {airfoil_file}")
 
-    if not os.path.exists(airfoil_file):
-        print(f"⚠️ Skipping {airfoil_file} — file not found.")
-        continue
+num_str = os.path.splitext(os.path.basename(airfoil_file))[0].split("_")[-1]
+repaneled_file = os.path.join(repaneled_dir, f"{repaneled_base}{num_str}.dat")
+polar_file = os.path.join(results_dir, f"polar_XFOIL_{num_str}_Re{int(Re):.0f}.txt")
 
-    print(f"\n=== Processing {airfoil_file} ===")
+print(f"\n=== Processing {airfoil_file} ===")
 
-    # Repanel
-    xu, yu, xl, yl = read_airfoil_coords(airfoil_file)
-    x_all, y_all = repanel_airfoil(xu, yu, xl, yl, panel_count)
-    with open(repaneled_file, "w") as f:
-        f.write("Repaneled_Airfoil\n")
-        for xi, yi in zip(x_all, y_all):
-            f.write(f"{xi:.6f} {yi:.6f}\n")
+# Repanel
+xu, yu, xl, yl = read_airfoil_coords(airfoil_file)
+x_all, y_all = repanel_airfoil(xu, yu, xl, yl, panel_count)
+with open(repaneled_file, "w") as f:
+    f.write("Repaneled_Airfoil\n")
+    for xi, yi in zip(x_all, y_all):
+        f.write(f"{xi:.6f} {yi:.6f}\n")
 
-    # Build XFOIL commands
-    if os.path.exists(polar_file):
-        os.remove(polar_file)
+# Build XFOIL commands
+if os.path.exists(polar_file):
+    os.remove(polar_file)
 
-    commands = [
-        f"LOAD {repaneled_file}",
-        "OPER",
-        "VPAR",
-        f"N {Ncrit}",
-        "",  # exit paneling
-        f"VISC {Re:.0f}",
-        f"MACH {Mach}",
-        f"ITER {iter_limit}",
-        "PACC",
-        polar_file,
-        "",  # end PACC prompt
-    ]
-    for alpha in alpha_points:
-        commands.append(f"ALFA {alpha:.4f}")
-    commands += ["CACC", "QUIT"]
-    xfoil_input = "\n".join(commands) + "\n"
+commands = [
+    f"LOAD {repaneled_file}",
+    "OPER",
+    "VPAR",
+    f"N {Ncrit}",
+    "",  # exit paneling
+    f"VISC {Re:.0f}",
+    f"MACH {Mach}",
+    f"ITER {iter_limit}",
+    "PACC",
+    polar_file,
+    "",  # end PACC prompt
+]
 
-    # Run XFOIL
-    try:
-        process = subprocess.run(
-            [xfoil_path],
-            input=xfoil_input,
-            text=True,
-            capture_output=True,
-            timeout=600  # ⏱️ 300 second limit
-        )
-    except subprocess.TimeoutExpired:
-        print(f"⏱️ Timeout on airfoil {num_str} — skipping...")
-        continue
+for alpha in alpha_points:
+    commands.append(f"ALFA {alpha:.4f}")
 
+commands += ["CACC", "QUIT"]
+xfoil_input = "\n".join(commands) + "\n"
+
+# Run XFOIL
+try:
+    process = subprocess.run(
+        [xfoil_path],
+        input=xfoil_input,
+        text=True,
+        capture_output=True,
+        timeout=360  # 6 minutes
+    )
+except subprocess.TimeoutExpired:
+    print(f"⏱️ Timeout on airfoil {num_str} — skipping...")
+else:
     if process.returncode != 0:
         print("❌ XFOIL failed to run.")
-        continue
+    else:
+        print(f"✅ Polar saved: {polar_file}")
 
-    print(f"✅ Polar saved: {polar_file}")
-
-print("\n🎯 All files processed!")
+print("\n🎯 Done!")

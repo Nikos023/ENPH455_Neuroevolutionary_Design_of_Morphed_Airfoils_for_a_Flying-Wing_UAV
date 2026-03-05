@@ -35,8 +35,8 @@ def read_polar(filename):
 # === FILE PATHS =============================================
 # ============================================================
 
-file_xfoil = "../XFOIL/Simulation Results/polar_XFOIL_015_Re1000000.txt"
-file_nf = "../Neuralfoil/Simulation Results/polar_NeuralFoil_015_Re1000000.txt"
+file_xfoil = "../XFOIL/Simulation Results 5000Re1e6/polar_XFOIL_015_Re1000000.txt"
+file_nf = "../Neuralfoil/Simulation Results 5000Re1e6/polar_NeuralFoil_015_Re1000000.txt"
 Re = 1e6  # Reynolds number used for naming
 
 # ============================================================

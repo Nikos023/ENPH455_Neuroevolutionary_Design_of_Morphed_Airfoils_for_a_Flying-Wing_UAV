@@ -10,8 +10,8 @@ import pandas as pd
 # ============================================================
 
 geom_dir = "../Morphing/Geometry(Not)/"  # folder with saved .txt airfoils
-xfoil_dir = "../XFOIL/Simulation Results/"
-nf_dir = "../NeuralFoil/Simulation Results/"
+xfoil_dir = "../XFOIL/Simulation Results 5000Re1e6/"
+nf_dir = "../NeuralFoil/Simulation Results 5000Re1e6 5000Re1e6/"
 comparison_dir = "../Comparison/Comparison Results"
 Re = 1e6
 

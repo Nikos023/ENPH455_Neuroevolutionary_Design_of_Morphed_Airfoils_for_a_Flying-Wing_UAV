@@ -16,11 +16,18 @@ import os
 import joblib
 from neuralfoil import get_aero_from_coordinates
 
+REYNOLDS = 3e5
+re_folder = f"{REYNOLDS:.0e}".replace("+0", "").replace("+", "")
+
 # ================== CONFIG ===============================
 config_path = "NEAT Config Single Genome.ini"
-best_genome_file = "BestGenomes/best_genome_nf_aoa10.pkl"
+best_genome_file = os.path.join(
+    "BestGenomes",
+    f"Re{re_folder}",
+    "best_genome_nf_aoa5.pkl"
+)
 output_name = "NEAT_airfoil_10ctrl"
-AoA = 10.0
+AoA = 5.0
 
 num_ctrl = 10
 n_each_side = num_ctrl // 2
@@ -43,15 +50,15 @@ yt_base = 5 * t * (
 )
 
 #max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
-max_offsets = np.array([0.12,0.10,0.08,0.06,0.02,0.01,0.04,0.06,0.08,0.10])
+max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
 #max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
 #max_offsets = np.array([0.20,0.16,0.12,0.09,0.01,0.01,0.09,0.012,0.16,0.20])
 
 # ================== LOAD GB MODELS ========================
-model_dir = "../Comparison/Comparison Results/global_model"
-model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb_5000_samples.joblib"))
-model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb_5000_samples.joblib"))
-model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb_5000_samples.joblib"))
+model_dir = os.path.join("../Comparison/Comparison Results/global_model/5000gb", f"Re{re_folder}")
+model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb.joblib"))
+model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb.joblib"))
+model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
 
 # ================== HELPER FUNCTIONS ====================
 def yc_base_function(x):
@@ -99,7 +106,7 @@ def apply_gb_correction(delta_y, xu, yu, xl, yl, AoA):
     aero = get_aero_from_coordinates(
         coordinates=coords,
         alpha=[AoA],
-        Re=5e5,
+        Re=REYNOLDS,
         model_size="xxxlarge",
         n_crit=9.0,
         xtr_upper=1.0,
@@ -255,3 +262,37 @@ with open(dat_filename, "w") as f:
 # ================== AERODYNAMICS ==================
 cl_corr, cd_corr, cm_corr = apply_gb_correction(delta_y, xu, yu, xl, yl, AoA)
 print(f"📊 Corrected @ AoA={AoA}° → CL={cl_corr:.6f}, CD={cd_corr:.6f}, CM={cm_corr:.10f}, CL/CD={cl_corr/cd_corr:.6f}")
+
+# ================== SAVE XFOIL-READY GEOMETRY ==========================
+
+os.makedirs("Geometry", exist_ok=True)
+
+dat_filename = f"Geometry/{output_name}.dat"
+
+# Use cosine spacing exactly like your XFOIL repaneler
+panel_count = 300
+n_half = panel_count // 2 + 1
+
+beta = np.linspace(0, np.pi, n_half)
+x_cos = 0.5 * (1 - np.cos(beta))
+
+# Interpolate surfaces onto cosine spacing
+y_upper = np.interp(x_cos, xu, yu)
+y_lower = np.interp(x_cos, xl, yl)
+
+# Build TE→LE (upper) and LE→TE (lower)
+x_upper = x_cos[::-1]
+y_upper = y_upper[::-1]
+
+x_lower = x_cos[1:]
+y_lower = y_lower[1:]
+
+x_all = np.concatenate([x_upper, x_lower])
+y_all = np.concatenate([y_upper, y_lower])
+
+with open(dat_filename, "w") as f:
+    f.write(f"{output_name}\n")
+    for xi, yi in zip(x_all, y_all):
+        f.write(f"{xi:.6f} {yi:.6f}\n")
+
+print(f"✅ XFOIL geometry saved: {dat_filename}")
