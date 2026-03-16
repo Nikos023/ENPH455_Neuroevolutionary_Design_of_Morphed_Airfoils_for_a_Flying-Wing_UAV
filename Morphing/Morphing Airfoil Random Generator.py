@@ -65,7 +65,7 @@ x_ctrl = np.concatenate([x_ctrl_left, x_ctrl_right])
 y_ctrl_base = np.interp(x_ctrl, x, yc_base)
 
 # NEAT-consistent offset limits
-max_offsets = np.array([0.12,0.10,0.08,0.06,0.02,0.01,0.04,0.06,0.08,0.10])
+max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
 
 # ============================================================
 # === RANDOM SAMPLE GENERATION ===============================

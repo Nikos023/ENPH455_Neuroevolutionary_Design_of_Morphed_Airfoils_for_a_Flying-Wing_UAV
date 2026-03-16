@@ -1,0 +1,15 @@
+  
+       XFOIL         Version 6.99
+  
+ Calculated polar for: Repaneled_Airfoil                               
+  
+ 1 1 Reynolds number fixed          Mach number fixed         
+  
+ xtrf =   1.000 (top)        1.000 (bottom)  
+ Mach =   0.000     Re =     0.050 e 6     Ncrit =   9.000  9.000
+  
+   alpha    CL        CD       CDp       CM     Top_Xtr  Bot_Xtr  Top_Itr  Bot_Itr
+  ------ -------- --------- --------- -------- -------- -------- -------- --------
+  -4.915  -0.3527   0.07642   0.06491   0.0003   1.0000   0.2933   1.0000 205.6532
+  -4.829  -0.3648   0.07588   0.06496   0.0013   1.0000   0.2952   1.0000 205.8480
+  -4.744  -0.3791   0.07531   0.06505   0.0023   1.0000   0.2961   1.0000 205.9501

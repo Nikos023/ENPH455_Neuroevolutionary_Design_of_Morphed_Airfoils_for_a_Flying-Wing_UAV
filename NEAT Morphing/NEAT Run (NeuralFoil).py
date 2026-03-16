@@ -16,18 +16,31 @@ import os
 import joblib
 from neuralfoil import get_aero_from_coordinates
 
-REYNOLDS = 3e5
+REYNOLDS = 1e6
 re_folder = f"{REYNOLDS:.0e}".replace("+0", "").replace("+", "")
+AoA = -5.00
 
 # ================== CONFIG ===============================
 config_path = "NEAT Config Single Genome.ini"
+
+aoa_folder = f"{AoA:.2f} Degrees"
+
+save_dir = os.path.join(
+    "BestGenomes",
+    f"Re{re_folder}",
+    aoa_folder
+)
+
+os.makedirs(save_dir, exist_ok=True)
+
 best_genome_file = os.path.join(
     "BestGenomes",
     f"Re{re_folder}",
-    "best_genome_nf_aoa5.pkl"
+    aoa_folder,
+    "best_genome_nf.pkl"
 )
-output_name = "NEAT_airfoil_10ctrl"
-AoA = 5.0
+
+output_name = "NEAT_airfoil"
 
 num_ctrl = 10
 n_each_side = num_ctrl // 2
@@ -49,13 +62,18 @@ yt_base = 5 * t * (
     - 0.1015*x_dense**4
 )
 
+#Max delta_y per control point
 #max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
-max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
-#max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
+#max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.04,0.06,0.08,0.10])
+#max_offsets = np.array([0.05,0.04,0.00,0.00,0.00,0.01,0.06,0.09,0.12,0.14])
+max_offsets = np.array([0.09,0.08,0.07,0.05,0.04,0.04,0.08,0.11,0.14,0.16])
+#max_offsets = np.array([0.08,0.06,0.04,0.04,0.01,0.01,0.03,0.04,0.06,0.08])
+#max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
+#max_offsets = np.array([0.07,0.06,0.04,0.02,0.01,0.01,0.06,0.09,0.12,0.14])
 #max_offsets = np.array([0.20,0.16,0.12,0.09,0.01,0.01,0.09,0.012,0.16,0.20])
 
 # ================== LOAD GB MODELS ========================
-model_dir = os.path.join("../Comparison/Comparison Results/global_model/5000gb", f"Re{re_folder}")
+model_dir = os.path.join("../Comparison/Comparison Results/global_model/2000gb", f"Re{re_folder}")
 model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb.joblib"))
 model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb.joblib"))
 model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
@@ -118,8 +136,12 @@ def apply_gb_correction(delta_y, xu, yu, xl, yl, AoA):
     cm_nf = aero["CM"][0]
 
     cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
-    cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-5)
+    cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
     cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
+
+    # cl_corr = cl_nf
+    # cd_corr = max(cd_nf, 1e-4)
+    # cm_corr = cm_nf
 
     return cl_corr, cd_corr, cm_corr
 
@@ -237,15 +259,13 @@ plt.legend()
 plt.show()
 
 # ================== SAVE FILES ==========================
-os.makedirs("Geometry", exist_ok=True)
-
-txt_filename = f"Geometry/{output_name}.txt"
+txt_filename = os.path.join(save_dir, f"{output_name}.txt")
 with open(txt_filename, "w") as f:
     f.write("=== Control Points + Offsets ===\n")
     for xi, yi, off in zip(x_ctrl, y_ctrl_new, delta_y):
-        f.write(f"{xi:.5f}, {yi:.5f}, {off:.5f}\n")
+        f.write(f"{xi:.10f}, {yi:.10f}, {off:.10f}\n")
 
-dat_filename = f"Geometry/{output_name}.dat"
+dat_filename = os.path.join(save_dir, f"{output_name}.dat")
 N = 100
 beta_cos = np.linspace(0, np.pi, N)
 x_cos = 0.5*(1 - np.cos(beta_cos))
@@ -257,7 +277,7 @@ y_all = np.concatenate([y_upper[::-1], y_lower[1:]])
 with open(dat_filename, "w") as f:
     f.write(f"{output_name}\n")
     for xi, yi in zip(x_all, y_all):
-        f.write(f"{xi:.6f} {yi:.6f}\n")
+        f.write(f"{xi:.10f} {yi:.10f}\n")
 
 # ================== AERODYNAMICS ==================
 cl_corr, cd_corr, cm_corr = apply_gb_correction(delta_y, xu, yu, xl, yl, AoA)
@@ -265,9 +285,7 @@ print(f"📊 Corrected @ AoA={AoA}° → CL={cl_corr:.6f}, CD={cd_corr:.6f}, CM=
 
 # ================== SAVE XFOIL-READY GEOMETRY ==========================
 
-os.makedirs("Geometry", exist_ok=True)
-
-dat_filename = f"Geometry/{output_name}.dat"
+dat_filename = os.path.join(save_dir, f"{output_name}.dat")
 
 # Use cosine spacing exactly like your XFOIL repaneler
 panel_count = 300
@@ -293,6 +311,6 @@ y_all = np.concatenate([y_upper, y_lower])
 with open(dat_filename, "w") as f:
     f.write(f"{output_name}\n")
     for xi, yi in zip(x_all, y_all):
-        f.write(f"{xi:.6f} {yi:.6f}\n")
+        f.write(f"{xi:.10f} {yi:.10f}\n")
 
 print(f"✅ XFOIL geometry saved: {dat_filename}")

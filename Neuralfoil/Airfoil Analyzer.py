@@ -6,6 +6,8 @@ import os
 # === FILE READING FUNCTION ==================================
 # ============================================================
 
+Re = 5e4
+
 def read_airfoil_file(filename):
     """Parses the airfoil file and extracts control, upper, and lower surfaces."""
     with open(filename, "r") as f:
@@ -60,7 +62,7 @@ def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
     return coords
 
 
-def evaluate_airfoil(coords, alphas, Re=3e5, model_size="xxxlarge", n_crit=9.0, xtr_upper=1.0, xtr_lower=1.0):
+def evaluate_airfoil(coords, alphas, Re=Re, model_size="xxxlarge", n_crit=9.0, xtr_upper=1.0, xtr_lower=1.0):
     """Evaluates airfoil using NeuralFoil for a given AoA sweep."""
     aero = nf.get_aero_from_coordinates(
         coordinates=coords,
@@ -102,11 +104,11 @@ def save_polar_file(filename, alphas, CL, CD, Cm=None):
 
 def main():
     # Directory to save results
-    results_dir = "Simulation Results 5000Re3e5"
+    results_dir = "Simulation Results 5000Re5e4"
     os.makedirs(results_dir, exist_ok=True)
 
     # Loop through airfoils 000 to 914 (inclusive)
-    for i in range(5001):
+    for i in range(2001):
         num_str = f"{i:04d}"  # zero-padded
         filename = f"../Morphing/Geometry/airfoil_points_{num_str}.txt"
 
@@ -130,7 +132,6 @@ def main():
 
         # Define AoA range and Reynolds number
         alphas = np.linspace(-5, 12, 200)
-        Re = 3e5
 
         # Evaluate aerodynamic performance
         print("🧠 Running NeuralFoil aerodynamic evaluation...")

@@ -11,7 +11,7 @@ from scipy.interpolate import interp1d
 geom_dir = "../Morphing/Geometry/"
 comparison_dir = "../Comparison/Comparison Results"
 
-Re = 3e5
+Re = 1e5
 
 def format_re(re):
     return f"{re:.0e}".replace("+0", "").replace("+", "")
@@ -24,7 +24,7 @@ nf_dir    = os.path.join("../NeuralFoil", f"Simulation Results 5000{re_folder}")
 model_dir = os.path.join(
     comparison_dir,
     "global_model",
-    "5000gb",
+    "2000gb",
     re_folder
 )
 
