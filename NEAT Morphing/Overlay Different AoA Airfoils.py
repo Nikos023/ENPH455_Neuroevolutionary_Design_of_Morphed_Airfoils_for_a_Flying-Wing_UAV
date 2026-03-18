@@ -34,8 +34,9 @@ x_dense = (1 - np.cos(beta))/2
 m, p, t = 0.02, 0.4, 0.12
 yt_base = 5 * t * (0.2969*np.sqrt(x_dense) - 0.126*x_dense - 0.3516*x_dense**2 + 0.2843*x_dense**3 - 0.1015*x_dense**4)
 
-# Max delta per control point (as used in NEAT training)
-max_offsets = np.array([0.09,0.08,0.07,0.05,0.04,0.04,0.08,0.11,0.14,0.16])
+# Max delta_y per control point
+max_offsets = np.array([0.12,0.10,0.08,0.02,0.001,0.001,0.02,0.08,0.10,0.12])
+max_offsets = max_offsets * 0.75
 n_each_side = num_ctrl // 2
 x_ctrl = np.concatenate([np.linspace(0,1/3,n_each_side,endpoint=False), np.linspace(2/3,1,n_each_side)])
 
@@ -98,9 +99,16 @@ def apply_gb_correction(delta_y, xu, yu, xl, yl, AoA):
     )
 
     cl_nf, cd_nf, cm_nf = aero["CL"][0], aero["CD"][0], aero["CM"][0]
-    cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
-    cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
-    cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
+
+    if (AoA >= 0):
+        cl_corr = cl_nf
+        cd_corr = max(cd_nf, 1e-4)
+        cm_corr = cm_nf
+
+    else:
+        cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
+        cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
+        cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
 
     return cl_corr, cd_corr, cm_corr
 
@@ -154,18 +162,22 @@ for color, aoa_folder in zip(colors, aoa_folders):
     yc_new = smooth_camber(x_ctrl, y_ctrl_new, x_dense)
 
     # center lock (training-consistent)
-    center_mask = (x_dense>0.33)&(x_dense<0.66)
+    center_mask = (x_dense>0.33)&(x_dense<0.55)
     coeffs = np.polyfit(x_dense[center_mask], yc_base_function(x_dense)[center_mask], 1)
     yc_trend = np.polyval(coeffs, x_dense[center_mask])
-    blend_x = (x_dense[center_mask]-0.33)/(0.66-0.33)
+    blend_x = (x_dense[center_mask]-0.33)/(0.55-0.45)
     weights = 0.5*(1-np.cos(np.pi*blend_x))*0.6
     yc_new[center_mask] = (1-weights)*yc_new[center_mask]+weights*yc_trend
     yc_new = gaussian_filter1d(yc_new, sigma=2.0)
 
     xu, yu, xl, yl = compute_airfoil(x_dense, yc_new, yt_base)
 
-    plt.plot(xu, yu, lw=2, color=color, label=aoa_folder)
-    plt.plot(xl, yl, lw=2, color=color)
+    # Plot airfoil surfaces
+    plt.plot(xu, yu, color=color, label=aoa_folder)
+    plt.plot(xl, yl, color=color)
+
+    # Plot camber line (black dashed, no legend)
+    plt.plot(x_dense, yc_new, color='black', linestyle='--', linewidth=0.5, alpha=1)
     found_any = True
 
     cl, cd, cm = apply_gb_correction(delta_y, xu, yu, xl, yl, AoA)
@@ -182,8 +194,8 @@ if not found_any:
 
 plt.axis("equal")
 plt.grid(True)
-plt.xlabel("x/Chord (c)")
-plt.ylabel("y/Chord (c)")
+plt.xlabel("x/Chord (c)",  fontweight='bold')
+plt.ylabel("y/Chord (c)",  fontweight='bold')
 plt.title(f"NEAT Airfoils Overlay @ Re={re_folder}", fontsize=16, fontweight='bold')
 
 norm = mpl.colors.Normalize(vmin=min(aoa_vals), vmax=max(aoa_vals))
@@ -197,28 +209,70 @@ cbar = plt.colorbar(
     pad=0.08
 )
 
-cbar.set_label("Angle of Attack (°)")
+cbar.set_label("Angle of Attack (°)", fontweight='bold')
 
 # ================================
-# SORT AND PLOT CL/CD AND CM
+# LOAD XFOIL DATA
 # ================================
-idx = np.argsort(aoa_vals)
-aoa_vals, cl_vals, cd_vals, cm_vals, ld_vals = np.array(aoa_vals)[idx], np.array(cl_vals)[idx], np.array(cd_vals)[idx], np.array(cm_vals)[idx], np.array(ld_vals)[idx]
+import pandas as pd
 
+xfoil_file = os.path.join("XFOIL Results", "NACA2412Re1e6.txt")
+
+# Skip header lines and load table
+with open(xfoil_file, "r") as f:
+    lines = f.readlines()
+
+# Find the start of the data table
+for i, line in enumerate(lines):
+    if line.strip().startswith("Alpha"):
+        start_idx = i + 1
+        break
+
+data_xfoil = pd.read_csv(
+    xfoil_file,
+    skiprows=start_idx,
+    names=["Alpha","Cl","Cd","Cdp","Cm","Top_Xtr","Bot_Xtr"]
+)
+
+# Filter to AoA between -5 and 12.5 degrees
+xfoil_filtered = data_xfoil[(data_xfoil["Alpha"] >= -5) & (data_xfoil["Alpha"] <= 12.5)]
+
+# Compute CL/CD safely without SettingWithCopyWarning
+xfoil_filtered = xfoil_filtered.copy()  # make a true copy first
+xfoil_filtered["CL_CD"] = xfoil_filtered["Cl"] / xfoil_filtered["Cd"]
+
+# ================================
+# PLOT CL/CD with XFOIL overlay
+# ================================
 plt.figure(figsize=(10,6))
-plt.plot(aoa_vals, ld_vals, 'o-', lw=2)
+plt.plot(aoa_vals, ld_vals, 'o-', label="NEAT Airfoil", color="tab:blue")
+plt.plot(
+    xfoil_filtered["Alpha"],
+    xfoil_filtered["CL_CD"],
+    's--', lw=2, label="NACA2412 XFOIL", color="tab:orange"
+)
 plt.grid(True)
-plt.xlabel("Angle of Attack (°)")
-plt.ylabel("CL/CD")
-plt.title(f"CL/CD vs AoA @ Re={re_folder}")
+plt.xlabel("Angle of Attack (°)",  fontweight='bold')
+plt.ylabel("CL/CD",  fontweight='bold')
+plt.title(f"CL/CD vs AoA @ Re={re_folder}", fontsize=16, fontweight='bold')
+plt.legend()
 plt.tight_layout()
 plt.show()
 
+# ================================
+# PLOT CM with XFOIL overlay
+# ================================
 plt.figure(figsize=(10,6))
-plt.plot(aoa_vals, cm_vals, 's-', lw=2)
+plt.plot(aoa_vals, cm_vals, 'o-', label="NEAT Airfoil", color="tab:blue")
+plt.plot(
+    xfoil_filtered["Alpha"],
+    xfoil_filtered["Cm"],
+    's--', lw=2, label="NACA2412 XFOIL", color="tab:orange"
+)
 plt.grid(True)
-plt.xlabel("Angle of Attack (°)")
-plt.ylabel("CM")
-plt.title(f"Pitching Moment vs AoA @ Re={re_folder}")
+plt.xlabel("Angle of Attack (°)",  fontweight='bold')
+plt.ylabel("CM",  fontweight='bold')
+plt.title(f"Pitching Moment vs AoA @ Re={re_folder}", fontsize=16, fontweight='bold')
+plt.legend()
 plt.tight_layout()
 plt.show()

@@ -249,7 +249,7 @@ def save_with_filename(name):
 
     print(f"✅ Airfoil saved as {txt_filename}")
 
-    # Save .dat for XFOIL
+    # Save .dat for XFOIL Results
     N = 100
     beta = np.linspace(0, np.pi, N)
     x_cos = 0.5 * (1 - np.cos(beta))

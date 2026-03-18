@@ -6,7 +6,7 @@ Test a trained NEAT airfoil genome
 - Predicts control point offsets
 - Generates morphed airfoil
 - Plots result
-- Saves .txt and .dat files for XFOIL
+- Saves .txt and .dat files for XFOIL Results
 """
 
 import neat
@@ -140,7 +140,7 @@ with open(txt_filename, "w") as f:
         f.write(f"{xi:.5f}, {yi:.5f}\n")
 print(f"✅ Airfoil saved as {txt_filename}")
 
-# --- Save DAT for XFOIL ---
+# --- Save DAT for XFOIL Results ---
 N = 100
 beta = np.linspace(0, np.pi, N)
 x_cos = 0.5 * (1 - np.cos(beta))
@@ -154,5 +154,5 @@ with open(dat_filename, "w") as f:
     f.write(f"{output_name}\n")
     for xi, yi in zip(x_all, y_all):
         f.write(f"{xi:.6f} {yi:.6f}\n")
-print(f"✅ XFOIL-compatible file saved as {dat_filename}")
-print(f"📂 Load in XFOIL using:  LOAD {output_name}.dat")
+print(f"✅ XFOIL Results-compatible file saved as {dat_filename}")
+print(f"📂 Load in XFOIL Results using:  LOAD {output_name}.dat")

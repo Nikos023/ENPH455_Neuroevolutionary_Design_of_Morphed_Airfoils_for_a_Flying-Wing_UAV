@@ -187,12 +187,12 @@ def main():
         ax.fill_between(alpha_common, iqr_corr[0], iqr_corr[1], alpha=0.25)
 
         ax.set_ylabel(f"{title} |Error|")
-        ax.set_title(f"{title} Absolute Error vs XFOIL")
+        ax.set_title(f"{title} Absolute Error vs XFOIL Results")
 
     axs[-1].set_xlabel("Angle of Attack (deg)")
     axs[0].legend()
     plt.suptitle(
-        "Global NeuralFoil Performance vs XFOIL at Reynolds 2e5\nMedian ± IQR",
+        "Global NeuralFoil Performance vs XFOIL Results at Reynolds 2e5\nMedian ± IQR",
         fontsize=14,
         weight="bold"
     )

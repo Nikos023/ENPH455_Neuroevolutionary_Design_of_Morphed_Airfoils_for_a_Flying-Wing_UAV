@@ -72,7 +72,7 @@ def read_polar(filename):
 
 
 def compute_errors(alpha_x, cl_x, cd_x, cm_x, alpha_nf, cl_nf, cd_nf, cm_nf):
-    """Interpolate NeuralFoil data to XFOIL AoAs and compute absolute errors."""
+    """Interpolate NeuralFoil data to XFOIL Results AoAs and compute absolute errors."""
     f_cl = interp1d(alpha_nf, cl_nf, fill_value="extrapolate")
     f_cd = interp1d(alpha_nf, cd_nf, fill_value="extrapolate")
     f_cm = interp1d(alpha_nf, cm_nf, fill_value="extrapolate")

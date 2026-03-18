@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 
 REYNOLDS = 1e6
 re_folder = f"{REYNOLDS:.0e}".replace("+0", "").replace("+", "")
-AoA = -5.00
+AoA = 0.25
 Gen = 400
 CURRENT_GEN = 0
 
@@ -54,7 +54,8 @@ x_ctrl = np.concatenate([x_ctrl_left, x_ctrl_right])
 y_ctrl_base = np.interp(x_ctrl, x_dense, yc_base)
 
 # Max delta_y per control point
-max_offsets = np.array([0.09,0.08,0.07,0.05,0.04,0.04,0.08,0.11,0.14,0.16])
+max_offsets = np.array([0.12,0.10,0.08,0.02,0.001,0.001,0.02,0.08,0.10,0.12])
+max_offsets = max_offsets * 0.75
 
 # ================== HELPER FUNCTIONS ========================
 def smooth_camber(x_ctrl, y_ctrl, x_dense):
@@ -79,7 +80,7 @@ def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
 
 def get_cm_limit(gen):
     start = 0.005
-    end = 0.001
+    end = 0.0005
     decay_gens = int(0.9 * Gen)
     progress = min(1.0, gen / decay_gens)
     smooth = 0.5 * (1 - np.cos(np.pi * progress))
@@ -105,7 +106,7 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
 
     yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
 
-    center_start, center_end = 0.33, 0.66
+    center_start, center_end = 0.33, 0.60
     center_mask = (x_dense > center_start) & (x_dense < center_end)
 
     coeffs = np.polyfit(
@@ -147,13 +148,15 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     d2y_dx2 = np.gradient(dy_dx, x_ctrl)
     X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
 
-    cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
-    cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-5)
-    cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
+    if (target_aoa >= 0):
+        cl_corr = cl_nf
+        cd_corr = max(cd_nf, 1e-4)
+        cm_corr = cm_nf
 
-    # cl_corr = cl_nf
-    # cd_corr = max(cd_nf, 1e-4)
-    # cm_corr = cm_nf
+    else:
+        cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
+        cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
+        cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
 
     CM_LIMIT = get_cm_limit(CURRENT_GEN)
     progress = min(1.0, CURRENT_GEN / Gen)
@@ -186,22 +189,13 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     fitness -= 0.2 * smooth_penalty / num_ctrl
 
     d2yc_dx2 = np.gradient(np.gradient(yc, x_dense), x_dense)
-    center_mask_penalty = (x_dense > 0.33) & (x_dense < 0.66)
+    center_mask_penalty = (x_dense > 0.33) & (x_dense < 0.60)
     curvature_violation = np.maximum(0, np.abs(d2yc_dx2[center_mask_penalty]) - 0.8)
     fitness -= 1.5 * np.mean(curvature_violation ** 2)
-
-    fitness -= 0.1 * (np.std(delta_y_smooth[:5]) + np.std(delta_y_smooth[5:])) / 0.05
 
     # penalize unstable lift-to-drag behavior
     ld_stability = np.std(dy_dx)
     fitness -= 0.05 * ld_stability
-
-    d2yu_dx2 = np.gradient(np.gradient(yu, x_dense), x_dense)
-    d2yl_dx2 = np.gradient(np.gradient(yl, x_dense), x_dense)
-    mask = (x_dense > 0.2) & (x_dense < 0.8)
-    fitness -= 0.8 * (np.mean(d2yu_dx2[mask] ** 2) + np.mean(d2yl_dx2[mask] ** 2))
-
-    fitness += 0.05 * np.sum(np.abs(delta_y_smooth))
 
     genome.cm = cm_corr
     genome.clcd = cl_corr / cd_corr
@@ -240,15 +234,15 @@ def train_for_aoa(target_aoa, generations=50):
     # Plot CM and CM limit on the same axis
     cm_line, = ax1.plot([], [], color='#1f77b4', label="|CM|")
     limit_line, = ax1.plot([], [], "--", color='gray', label="CM Limit")
-    ax1.set_ylabel("Pitching Moment", fontsize=12)
+    ax1.set_ylabel("Pitching Moment", fontsize=12, fontweight='bold')
     ax1.grid(True, linestyle='--', alpha=0.5)
     ax1.set_title("Live Pitching Moment (CM) during NEAT Training", fontsize=14, fontweight='bold')
     ax1.legend(loc='upper right', fontsize=10)
 
     # CL/CD subplot
     ax2_line, = ax2.plot([], [], color='#ff7f0e', label="CL/CD")
-    ax2.set_ylabel("Corrected CL/CD", fontsize=12)
-    ax2.set_xlabel("Generation", fontsize=12)
+    ax2.set_ylabel("Corrected CL/CD", fontsize=12, fontweight='bold')
+    ax2.set_xlabel("Generation", fontsize=12, fontweight='bold')
     ax2.grid(True, linestyle='--', alpha=0.5)
     ax2.set_title("Live Corrected CL/CD during NEAT Training", fontsize=14, fontweight='bold')
     ax2.legend(loc='upper right', fontsize=10)
@@ -316,7 +310,7 @@ def train_for_aoa(target_aoa, generations=50):
     ax1_final.plot(cm_history, color='#1f77b4', label="|CM|")  # blue
     ax1_final.plot([get_cm_limit(g) for g in range(len(cm_history))], '--', color='gray', label="CM Limit")  # CM limit
 
-    ax1_final.set_ylabel("|CM|", fontsize=12)
+    ax1_final.set_ylabel("|CM|", fontsize=12, fontweight='bold')
     ax1_final.set_title("Pitching Moment (CM) Convergence", fontsize=14, fontweight='bold')
     ax1_final.grid(True, linestyle='--', alpha=0.5)
     ax1_final.legend(loc='upper right', fontsize=10)
@@ -324,8 +318,8 @@ def train_for_aoa(target_aoa, generations=50):
     # ---------- CL/CD subplot ----------
     ax2_final.plot(clcd_history, color='#ff7f0e', label="CL/CD")  # orange
 
-    ax2_final.set_ylabel("Corrected CL/CD", fontsize=12)
-    ax2_final.set_xlabel("Generation", fontsize=12)
+    ax2_final.set_ylabel("Corrected CL/CD", fontsize=12, fontweight='bold')
+    ax2_final.set_xlabel("Generation", fontsize=12, fontweight='bold')
     ax2_final.set_title("Lift-to-Drag Ratio (CL/CD) Convergence", fontsize=14, fontweight='bold')
     ax2_final.grid(True, linestyle='--', alpha=0.5)
     ax2_final.legend(loc='upper right', fontsize=10)
@@ -348,15 +342,14 @@ def train_for_aoa(target_aoa, generations=50):
     plt.close('all')
 
 # ================== RUN TRAINING ===========================
+# train_for_aoa(AoA, generations=Gen)
 
-train_for_aoa(AoA, generations=Gen)
+aoa_values = np.arange(0.50, 5 + 0.001, 0.25)  # add tiny epsilon to include 12.5
 
-# aoa_values = np.arange(0, -5, -0.5)
-#
-# for aoa in aoa_values:
-#     print("\n=======================================")
-#     print(f"Starting training for AoA = {aoa:.1f}°")
-#     print("=======================================\n")
-#
-#     CURRENT_GEN = 0
-#     train_for_aoa(aoa, generations=Gen)
+for aoa in aoa_values:
+    print("\n=======================================")
+    print(f"Starting training for AoA = {aoa:.1f}°")
+    print("=======================================\n")
+
+    CURRENT_GEN = 0
+    train_for_aoa(aoa, generations=Gen)

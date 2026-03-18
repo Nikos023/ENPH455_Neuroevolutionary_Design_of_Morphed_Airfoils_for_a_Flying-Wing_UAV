@@ -49,7 +49,7 @@ def read_geometry_file(filename):
 
 
 def read_polar(filename):
-    """Reads XFOIL or NeuralFoil polar file and extracts alpha, Cl, Cd, and Cm."""
+    """Reads XFOIL Results or NeuralFoil polar file and extracts alpha, Cl, Cd, and Cm."""
     with open(filename, 'r') as f:
         lines = f.readlines()
 
@@ -104,7 +104,7 @@ base_features = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2])
 alpha_x, cl_x, cd_x, cm_x, _ = read_polar(file_xfoil)
 alpha_nf, cl_nf, cd_nf, cm_nf, _ = read_polar(file_nf)
 
-# Interpolate NF to XFOIL AoA grid
+# Interpolate NF to XFOIL Results AoA grid
 f_cl = interp1d(alpha_nf, cl_nf, fill_value="extrapolate")
 f_cd = interp1d(alpha_nf, cd_nf, fill_value="extrapolate")
 f_cm = interp1d(alpha_nf, cm_nf, fill_value="extrapolate")
@@ -183,11 +183,11 @@ print(f"💾 Corrected comparison saved to '{output_csv}'")
 
 plt.style.use('seaborn-v0_8-whitegrid')
 fig, axs = plt.subplots(3, 2, figsize=(13, 10))
-fig.suptitle(f"XFOIL vs NeuralFoil Comparison (Corrected) — Airfoil {airfoil_number} (Re={int(Re):.0f})",
+fig.suptitle(f"XFOIL Results vs NeuralFoil Comparison (Corrected) — Airfoil {airfoil_number} (Re={int(Re):.0f})",
              fontsize=14, weight='bold')
 
 # CL
-axs[0, 0].plot(alpha_x, cl_x, 'o-', label='XFOIL')
+axs[0, 0].plot(alpha_x, cl_x, 'o-', label='XFOIL Results')
 axs[0, 0].plot(alpha_x, cl_nf_i, 's--', label='NF')
 axs[0, 0].plot(alpha_x, cl_corr, 'd-', label='NF Corr')
 axs[0, 0].set_ylabel("Cl")
@@ -202,7 +202,7 @@ axs[0, 1].set_title("Cl Error vs AoA")
 axs[0, 1].legend()
 
 # CD
-axs[1, 0].plot(alpha_x, cd_x, 'o-', label='XFOIL')
+axs[1, 0].plot(alpha_x, cd_x, 'o-', label='XFOIL Results')
 axs[1, 0].plot(alpha_x, cd_nf_i, 's--', label='NF')
 axs[1, 0].plot(alpha_x, cd_corr, 'd-', label='NF Corr')
 axs[1, 0].set_ylabel("Cd")
@@ -217,7 +217,7 @@ axs[1, 1].set_title("Cd Error vs AoA")
 axs[1, 1].legend()
 
 # CM
-axs[2, 0].plot(alpha_x, cm_x, 'o-', label='XFOIL')
+axs[2, 0].plot(alpha_x, cm_x, 'o-', label='XFOIL Results')
 axs[2, 0].plot(alpha_x, cm_nf_i, 's--', label='NF')
 axs[2, 0].plot(alpha_x, cm_corr, 'd-', label='NF Corr')
 axs[2, 0].set_ylabel("Cm")

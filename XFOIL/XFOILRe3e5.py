@@ -110,7 +110,7 @@ for i in range(START_INDEX, END_INDEX + 1):
         for xi, yi in zip(x_all, y_all):
             f.write(f"{xi:.6f} {yi:.6f}\n")
 
-    # Build XFOIL commands
+    # Build XFOIL Results commands
     if os.path.exists(polar_file):
         os.remove(polar_file)
 
@@ -132,7 +132,7 @@ for i in range(START_INDEX, END_INDEX + 1):
     commands += ["CACC", "QUIT"]
     xfoil_input = "\n".join(commands) + "\n"
 
-    # Run XFOIL
+    # Run XFOIL Results
     try:
         process = subprocess.run(
             [xfoil_path],
@@ -146,7 +146,7 @@ for i in range(START_INDEX, END_INDEX + 1):
         continue
 
     if process.returncode != 0:
-        print("❌ XFOIL failed to run.")
+        print("❌ XFOIL Results failed to run.")
         continue
 
     print(f"✅ Polar saved: {polar_file}")

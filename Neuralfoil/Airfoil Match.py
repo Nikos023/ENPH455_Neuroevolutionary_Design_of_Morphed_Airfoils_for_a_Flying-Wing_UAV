@@ -36,10 +36,10 @@ for file in os.listdir(neuralfoil_dir):
     xfoil_file = f"polar_XFOIL_{airfoil_id}_Re{reynolds}.txt"
     xfoil_path = os.path.join(xfoil_dir, xfoil_file)
 
-    # If XFOIL file does not exist → delete NeuralFoil file
+    # If XFOIL Results file does not exist → delete NeuralFoil file
     if not os.path.exists(xfoil_path):
 
-        print(f"❌ Deleting {file} (no XFOIL match)")
+        print(f"❌ Deleting {file} (no XFOIL Results match)")
         os.remove(neuralfoil_path)
         deleted_count += 1
 

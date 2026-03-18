@@ -96,7 +96,7 @@ with open(repaneled_file, "w") as f:
     for xi, yi in zip(x_all, y_all):
         f.write(f"{xi:.6f} {yi:.6f}\n")
 
-# Build XFOIL commands
+# Build XFOIL Results commands
 if os.path.exists(polar_file):
     os.remove(polar_file)
 
@@ -120,7 +120,7 @@ for alpha in alpha_points:
 commands += ["CACC", "QUIT"]
 xfoil_input = "\n".join(commands) + "\n"
 
-# Run XFOIL
+# Run XFOIL Results
 try:
     process = subprocess.run(
         [xfoil_path],
@@ -133,7 +133,7 @@ except subprocess.TimeoutExpired:
     print(f"⏱️ Timeout on airfoil {num_str} — skipping...")
 else:
     if process.returncode != 0:
-        print("❌ XFOIL failed to run.")
+        print("❌ XFOIL Results failed to run.")
     else:
         print(f"✅ Polar saved: {polar_file}")
 

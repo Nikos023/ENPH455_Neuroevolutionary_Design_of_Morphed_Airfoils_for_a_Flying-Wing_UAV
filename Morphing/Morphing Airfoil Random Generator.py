@@ -140,7 +140,7 @@ for i in range(1, n_samples + 1):
         for xi, yi in zip(xl, yl):
             f.write(f"{xi:.5f}, {yi:.5f}\n")
 
-    # ---- DAT (XFOIL) ----
+    # ---- DAT (XFOIL Results) ----
     N = 100
     beta = np.linspace(0, np.pi, N)
     x_cos = 0.5 * (1 - np.cos(beta))
