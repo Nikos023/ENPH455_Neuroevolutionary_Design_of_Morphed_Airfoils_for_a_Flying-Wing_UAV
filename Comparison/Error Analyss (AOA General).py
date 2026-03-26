@@ -11,7 +11,7 @@ from scipy.interpolate import interp1d
 geom_dir = "../Morphing/Geometry/"
 comparison_dir = "../Comparison/Comparison Results"
 
-Re = 1e5
+Re = 5e4
 
 def format_re(re):
     return f"{re:.0e}".replace("+0", "").replace("+", "")

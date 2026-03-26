@@ -22,8 +22,8 @@ import subprocess
 from neuralfoil import get_aero_from_coordinates
 
 # ================== USER SETTINGS ==========================
-REYNOLDS = 1e6
-AoA = 0.00
+REYNOLDS = 2e5
+AoA = -5.00
 
 xfoil_path = "/Users/nicholasburen/Downloads/xfoil/bin/xfoil"
 
@@ -60,8 +60,8 @@ yt_base = 5 * t * (
 )
 
 # Max delta_y per control point
-max_offsets = np.array([0.12,0.10,0.08,0.02,0.001,0.001,0.02,0.08,0.10,0.12])
-max_offsets = max_offsets * 0.75
+max_offsets = np.array([0.12,0.10,0.08,0.04,0.01,0.01,0.02,0.08,0.10,0.12])
+max_offsets = max_offsets * 0.65
 
 # ================== LOAD GB MODELS =========================
 model_dir = os.path.join("../Comparison/Comparison Results/global_model/2000gb", f"Re{re_folder}")
@@ -81,9 +81,9 @@ def y_ctrl_base_function():
     return np.interp(x_ctrl, x_dense, yc_base_function(x_dense))
 
 def smooth_camber(x_ctrl, y_ctrl):
-    spline = make_interp_spline(x_ctrl, y_ctrl, k=3)
+    spline = make_interp_spline(x_ctrl, y_ctrl, k=1)
     yc = spline(x_dense)
-    return gaussian_filter1d(yc, sigma=1.2)
+    return gaussian_filter1d(yc, sigma=25)
 
 def compute_airfoil(x, yc, yt):
     dyc_dx = np.gradient(yc, x)
@@ -114,21 +114,17 @@ def apply_gb_correction(delta_y, xu, yu, xl, yl):
         coordinates=coords,
         alpha=[AoA],
         Re=REYNOLDS,
-        model_size="xxxlarge"
+        model_size="xxxlarge",
+        n_crit=9.0,
+        xtr_upper=1.0,
+        xtr_lower=1.0
     )
 
     cl_nf, cd_nf, cm_nf = aero["CL"][0], aero["CD"][0], aero["CM"][0]
 
-    if (AoA >= 0):
-        cl = cl_nf
-        cd = max(cd_nf, 1e-4)
-        cm = cm_nf
-
-    else:
-        cl = cl_nf - model_cl.predict(X_input)[0]
-        cd = max(cd_nf - model_cd.predict(X_input)[0], 1e-4)
-        cm = cm_nf - model_cm.predict(X_input)[0]
-
+    cl = cl_nf
+    cd = max(cd_nf, 1e-3)
+    cm = cm_nf - model_cm.predict(X_input)[0]
 
 
     return cl, cd, cm
@@ -171,7 +167,7 @@ QUIT
         print(process.stderr)
         return None, None
 
-    # 🔥 Critical: verify files exist
+    # Verify files exist
     if not os.path.exists(cp_file):
         print("⚠️ Cp file not generated")
         return None, polar_file
@@ -216,21 +212,31 @@ net = neat.nn.FeedForwardNetwork.create(genome, config)
 y_ctrl_base = y_ctrl_base_function()
 X_input = np.hstack([y_ctrl_base, AoA]).reshape(1, -1)
 
-raw = np.array(net.activate(X_input.flatten()))[:num_ctrl]
-delta_y = np.clip(raw * max_offsets * 2, -max_offsets, max_offsets)
-delta_y = gaussian_filter1d(delta_y, sigma=2)
+#Compute raw NEAT output
+raw_output = np.array(net.activate(X_input.flatten()))[:num_ctrl]
 
-y_ctrl_new = y_ctrl_base + delta_y
+#Convert to offsets (initially scaled by max_offsets)
+delta_y = raw_output * max_offsets * 2.0
+
+#Smooth all offsets
+delta_y_smooth = gaussian_filter1d(delta_y, sigma=2)
+
+#Enforce max_offsets on all points AFTER smoothing
+delta_y_smooth = np.clip(delta_y_smooth, -max_offsets, max_offsets)
+
+#Apply to base control points
+y_ctrl_new = y_ctrl_base + delta_y_smooth
+
 yc_new = smooth_camber(x_ctrl, y_ctrl_new)
 
 # center locking
-mask = (x_dense > 0.33) & (x_dense < 0.55)
+mask = (x_dense > 0.40) & (x_dense < 0.60)
 trend = np.polyval(
     np.polyfit(x_dense[mask], yc_base_function(x_dense)[mask], 1),
     x_dense[mask]
 )
 
-blend = (x_dense[mask]-0.33)/(0.55-0.45)
+blend = (x_dense[mask]-0.40)/(0.60-0.40)
 weights = 0.5*(1-np.cos(np.pi*blend))*0.6
 
 yc_new[mask] = (1-weights)*yc_new[mask] + weights*trend
@@ -258,7 +264,7 @@ with open(dat_file, "w") as f:
 print(f"✅ Geometry saved: {dat_file}")
 
 # ================== MODEL PREDICTION =======================
-cl_m, cd_m, cm_m = apply_gb_correction(delta_y, xu, yu, xl, yl)
+cl_m, cd_m, cm_m = apply_gb_correction(delta_y_smooth, xu, yu, xl, yl)
 
 print("\n📊 NeuralFoil + GB Correction")
 print(f"CL = {cl_m:.6f}, CD = {cd_m:.6f}, CM = {cm_m:.6f}, CL/CD = {cl_m/cd_m:.6f}")

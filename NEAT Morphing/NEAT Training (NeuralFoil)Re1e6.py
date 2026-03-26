@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 
 REYNOLDS = 1e6
 re_folder = f"{REYNOLDS:.0e}".replace("+0", "").replace("+", "")
-AoA = 0.25
+AoA = 12.00
 Gen = 400
 CURRENT_GEN = 0
 
@@ -54,14 +54,14 @@ x_ctrl = np.concatenate([x_ctrl_left, x_ctrl_right])
 y_ctrl_base = np.interp(x_ctrl, x_dense, yc_base)
 
 # Max delta_y per control point
-max_offsets = np.array([0.12,0.10,0.08,0.02,0.001,0.001,0.02,0.08,0.10,0.12])
-max_offsets = max_offsets * 0.75
+max_offsets = np.array([0.12,0.10,0.08,0.04,0.01,0.01,0.02,0.08,0.10,0.12])
+max_offsets = max_offsets * 0.65
 
 # ================== HELPER FUNCTIONS ========================
 def smooth_camber(x_ctrl, y_ctrl, x_dense):
-    spline = make_interp_spline(x_ctrl, y_ctrl, k=3)
+    spline = make_interp_spline(x_ctrl, y_ctrl, k=1)
     yc = spline(x_dense)
-    return gaussian_filter1d(yc, sigma=1.2)
+    return gaussian_filter1d(yc, sigma=25)
 
 def compute_airfoil(x, yc, yt):
     dyc_dx = np.gradient(yc, x)
@@ -80,7 +80,7 @@ def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
 
 def get_cm_limit(gen):
     start = 0.005
-    end = 0.0005
+    end = 0.0001
     decay_gens = int(0.9 * Gen)
     progress = min(1.0, gen / decay_gens)
     smooth = 0.5 * (1 - np.cos(np.pi * progress))
@@ -99,14 +99,24 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     y_ctrl_noisy = y_ctrl_base
     X_input_net = np.hstack([y_ctrl_noisy, target_aoa]).reshape(1, -1)
 
+    #Compute raw NEAT output
     raw_output = np.array(net.activate(X_input_net.flatten()))[:num_ctrl]
-    delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
+
+    #Convert to offsets (initially scaled by max_offsets)
+    delta_y = raw_output * max_offsets * 2.0
+
+    #Smooth all offsets
     delta_y_smooth = gaussian_filter1d(delta_y, sigma=2.0)
+
+    #Enforce max_offsets on all points AFTER smoothing
+    delta_y_smooth = np.clip(delta_y_smooth, -max_offsets, max_offsets)
+
+    #Apply to base control points
     y_ctrl = y_ctrl_base + delta_y_smooth
 
     yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
 
-    center_start, center_end = 0.33, 0.60
+    center_start, center_end = 0.40, 0.60
     center_mask = (x_dense > center_start) & (x_dense < center_end)
 
     coeffs = np.polyfit(
@@ -148,15 +158,9 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     d2y_dx2 = np.gradient(dy_dx, x_ctrl)
     X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
 
-    if (target_aoa >= 0):
-        cl_corr = cl_nf
-        cd_corr = max(cd_nf, 1e-4)
-        cm_corr = cm_nf
-
-    else:
-        cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
-        cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
-        cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
+    cl_corr = cl_nf
+    cd_corr = max(cd_nf, 1e-3)
+    cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
 
     CM_LIMIT = get_cm_limit(CURRENT_GEN)
     progress = min(1.0, CURRENT_GEN / Gen)
@@ -170,9 +174,9 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     cd_safe = max(cd_corr, 1e-4)
 
     if cl_corr <= 0:
-        efficiency = -abs(cl_corr) / cd_safe  # strongly punish negative lift
+        efficiency = -(abs(cl_corr) / cd_safe) ** 2  # strongly punish negative lift
     else:
-        efficiency = (cl_corr ** 1.2) / (cd_safe ** 1.5)
+        efficiency = (cl_corr ** 1.4) / (cd_safe ** 1.5)
 
     ld_term = ld_weight * (efficiency / 60)
 
@@ -189,13 +193,18 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     fitness -= 0.2 * smooth_penalty / num_ctrl
 
     d2yc_dx2 = np.gradient(np.gradient(yc, x_dense), x_dense)
-    center_mask_penalty = (x_dense > 0.33) & (x_dense < 0.60)
+    center_mask_penalty = (x_dense > 0.40) & (x_dense < 0.60)
     curvature_violation = np.maximum(0, np.abs(d2yc_dx2[center_mask_penalty]) - 0.8)
     fitness -= 1.5 * np.mean(curvature_violation ** 2)
 
-    # penalize unstable lift-to-drag behavior
-    ld_stability = np.std(dy_dx)
-    fitness -= 0.05 * ld_stability
+    fitness -= 0.1 * (np.std(delta_y_smooth[:5]) + np.std(delta_y_smooth[5:])) / 0.05
+
+    d2yu_dx2 = np.gradient(np.gradient(yu, x_dense), x_dense)
+    d2yl_dx2 = np.gradient(np.gradient(yl, x_dense), x_dense)
+    mask = (x_dense > 0.2) & (x_dense < 0.8)
+    fitness -= 0.8 * (np.mean(d2yu_dx2[mask] ** 2) + np.mean(d2yl_dx2[mask] ** 2))
+
+    fitness += 0.05 * np.sum(np.abs(delta_y_smooth))
 
     genome.cm = cm_corr
     genome.clcd = cl_corr / cd_corr
@@ -203,7 +212,7 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     return fitness
 
 # ================== NEAT TRAINING ===========================
-def train_for_aoa(target_aoa, generations=50):
+def train_for_aoa(target_aoa, generations=50, seed_genome=None):
     global CURRENT_GEN
     overall_best_genome = None
     overall_best_fitness = -np.inf
@@ -215,10 +224,22 @@ def train_for_aoa(target_aoa, generations=50):
         neat.DefaultStagnation,
         "NEAT Config Single Genome.ini"
     )
+
+    # Initialize population
     pop = neat.Population(config)
     pop.add_reporter(neat.StdOutReporter(True))
     stats = neat.StatisticsReporter()
     pop.add_reporter(stats)
+
+    if seed_genome is not None:
+        genome0 = list(pop.population.values())[0]
+
+        # Copy weights ONLY for matching connections
+        for key in genome0.connections:
+            if key in seed_genome.connections:
+                genome0.nodes[key].bias = seed_genome.nodes[key].bias
+
+        print("Seed genome weights copied (structure preserved)")
 
     # ===== LIVE TRAINING PLOT AS SUBPLOTS =====
     plt.ion()
@@ -344,12 +365,27 @@ def train_for_aoa(target_aoa, generations=50):
 # ================== RUN TRAINING ===========================
 # train_for_aoa(AoA, generations=Gen)
 
-aoa_values = np.arange(0.50, 5 + 0.001, 0.25)  # add tiny epsilon to include 12.5
+aoa_values = np.arange(-5.00, 12.50 + 0.001, 0.25)
 
-for aoa in aoa_values:
+seed_genome = None
+for i, aoa in enumerate(aoa_values):
     print("\n=======================================")
-    print(f"Starting training for AoA = {aoa:.1f}°")
+    print(f"Starting training for AoA = {aoa:.2f}°")
     print("=======================================\n")
 
     CURRENT_GEN = 0
-    train_for_aoa(aoa, generations=Gen)
+
+    # Load previous AoA best genome as seed
+    if i > 0:
+        prev_aoa = aoa_values[i-1]
+        prev_folder = os.path.join("BestGenomes", f"Re{re_folder}", f"{prev_aoa:.2f} Degrees")
+        prev_file = os.path.join(prev_folder, "best_genome_nf.pkl")
+        if os.path.exists(prev_file):
+            with open(prev_file, "rb") as f:
+                seed_genome = pickle.load(f)
+            print(f"Loaded best genome from AoA {prev_aoa:.2f}° as seed.")
+        else:
+            seed_genome = None
+            print("No previous genome found; starting from scratch.")
+
+    train_for_aoa(aoa, generations=Gen, seed_genome=seed_genome)

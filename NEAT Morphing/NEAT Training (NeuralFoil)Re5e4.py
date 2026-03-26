@@ -22,8 +22,8 @@ import matplotlib.pyplot as plt
 
 REYNOLDS = 5e4
 re_folder = f"{REYNOLDS:.0e}".replace("+0", "").replace("+", "")
-AoA = 5.0
-Gen = 350
+AoA = 12.00
+Gen = 400
 CURRENT_GEN = 0
 
 # ================== BASE PARAMETERS =========================
@@ -54,19 +54,14 @@ x_ctrl = np.concatenate([x_ctrl_left, x_ctrl_right])
 y_ctrl_base = np.interp(x_ctrl, x_dense, yc_base)
 
 # Max delta_y per control point
-#max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.02,0.03,0.04,0.05])
-#max_offsets = np.array([0.05,0.04,0.03,0.02,0.01,0.01,0.04,0.06,0.08,0.10])
-max_offsets = np.array([0.07,0.06,0.05,0.03,0.01,0.01,0.06,0.09,0.12,0.14])
-#max_offsets = np.array([0.08,0.06,0.04,0.04,0.01,0.01,0.03,0.04,0.06,0.08])
-#max_offsets = np.array([0.10,0.08,0.06,0.04,0.01,0.01,0.04,0.06,0.08,0.10])
-#max_offsets = np.array([0.15,0.12,0.09,0.06,0.01,0.01,0.06,0.09,0.12,0.15])
-#max_offsets = np.array([0.20,0.16,0.12,0.09,0.01,0.01,0.09,0.012,0.16,0.20])
+max_offsets = np.array([0.12,0.10,0.08,0.04,0.01,0.01,0.02,0.08,0.10,0.12])
+max_offsets = max_offsets * 0.65
 
 # ================== HELPER FUNCTIONS ========================
 def smooth_camber(x_ctrl, y_ctrl, x_dense):
-    spline = make_interp_spline(x_ctrl, y_ctrl, k=3)
+    spline = make_interp_spline(x_ctrl, y_ctrl, k=1)
     yc = spline(x_dense)
-    return gaussian_filter1d(yc, sigma=1.2)
+    return gaussian_filter1d(yc, sigma=25)
 
 def compute_airfoil(x, yc, yt):
     dyc_dx = np.gradient(yc, x)
@@ -84,13 +79,11 @@ def prepare_coordinates_for_neuralfoil(xu, yu, xl, yl):
     return coords
 
 def get_cm_limit(gen):
-    start = 0.02
-    end = 0.001
-    decay_gens = int(0.8 * Gen)
-
+    start = 0.005
+    end = 0.0001
+    decay_gens = int(0.9 * Gen)
     progress = min(1.0, gen / decay_gens)
     smooth = 0.5 * (1 - np.cos(np.pi * progress))
-
     return start - (start - end) * smooth
 
 # ================== LOAD GB MODELS ==========================
@@ -106,14 +99,24 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     y_ctrl_noisy = y_ctrl_base
     X_input_net = np.hstack([y_ctrl_noisy, target_aoa]).reshape(1, -1)
 
+    #Compute raw NEAT output
     raw_output = np.array(net.activate(X_input_net.flatten()))[:num_ctrl]
-    delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
+
+    #Convert to offsets (initially scaled by max_offsets)
+    delta_y = raw_output * max_offsets * 2.0
+
+    #Smooth all offsets
     delta_y_smooth = gaussian_filter1d(delta_y, sigma=2.0)
+
+    #Enforce max_offsets on all points AFTER smoothing
+    delta_y_smooth = np.clip(delta_y_smooth, -max_offsets, max_offsets)
+
+    #Apply to base control points
     y_ctrl = y_ctrl_base + delta_y_smooth
 
     yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
 
-    center_start, center_end = 0.33, 0.66
+    center_start, center_end = 0.40, 0.60
     center_mask = (x_dense > center_start) & (x_dense < center_end)
 
     coeffs = np.polyfit(
@@ -124,13 +127,8 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     yc_trend = np.polyval(coeffs, x_dense[center_mask])
 
     blend_x = (x_dense[center_mask] - center_start) / (center_end - center_start)
-    weights = 0.5 * (1 - np.cos(np.pi * blend_x))
-    weights *= 0.6
-
-    yc[center_mask] = (
-        (1 - weights) * yc[center_mask] +
-        weights * yc_trend
-    )
+    weights = 0.5 * (1 - np.cos(np.pi * blend_x)) * 0.6
+    yc[center_mask] = (1 - weights) * yc[center_mask] + weights * yc_trend
 
     yc = gaussian_filter1d(yc, sigma=2.0)
 
@@ -160,156 +158,65 @@ def compute_fitness(genome, config, target_aoa, noise_sigma=0.0005):
     d2y_dx2 = np.gradient(dy_dx, x_ctrl)
     X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
 
-    cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
-    cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
+    cl_corr = cl_nf
+    cd_corr = max(cd_nf, 1e-3)
     cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
 
     CM_LIMIT = get_cm_limit(CURRENT_GEN)
-
     progress = min(1.0, CURRENT_GEN / Gen)
 
-    if REYNOLDS >= 1e6:
-        cm_weight = 140 * (1 - 0.30 * progress)
-        ld_weight = 180 * (1 + 0.60 * progress)
-
-    elif REYNOLDS >= 5e5:
-        cm_weight = 160 * (1 - 0.30 * progress)
-        ld_weight = 200 * (1 + 0.60 * progress)
-
-    elif REYNOLDS >= 3e5:
-        cm_weight = 180 * (1 - 0.30 * progress)
-        ld_weight = 220 * (1 + 0.60 * progress)
-
-    elif REYNOLDS >= 2e5:
-        cm_weight = 200 * (1 - 0.30 * progress)
-        ld_weight = 240 * (1 + 0.60 * progress)
-
-    elif REYNOLDS >= 1e5:
-        cm_weight = 230 * (1 - 0.30 * progress)
-        ld_weight = 270 * (1 + 0.60 * progress)
-
-    else:
-        cm_weight = 260 * (1 - 0.30 * progress)
-        ld_weight = 300 * (1 + 0.60 * progress)
+    cm_weight = 1000 * (1 - 0.3 * progress)
+    ld_weight = 340 * (1 + 0.7 * progress)
 
     cm_violation = max(0.0, abs(cm_corr) - CM_LIMIT)
     cm_term = -cm_weight * (cm_violation / CM_LIMIT)
 
-    # # Continuous penalty pushing CM → 0
-    # cm_center_penalty = -cm_weight * (abs(cm_corr) / CM_LIMIT) ** 2
-    #
-    # # Strong wall if outside limit
-    # cm_violation = max(0.0, abs(cm_corr) - CM_LIMIT)
-    # cm_limit_penalty = -5 * cm_weight * (cm_violation / CM_LIMIT) ** 2
-    #
-    # cm_term = cm_center_penalty + cm_limit_penalty
+    cd_safe = max(cd_corr, 1e-4)
 
-    LD = cl_corr / cd_corr
-    LD_safe = max(LD, 1e-3)
+    if cl_corr <= 0:
+        efficiency = -(abs(cl_corr) / cd_safe) ** 2  # strongly punish negative lift
+    else:
+        efficiency = (cl_corr ** 1.4) / (cd_safe ** 1.5)
 
-    ld_term = ld_weight * np.sqrt(LD_safe)
+    ld_term = ld_weight * (efficiency / 60)
 
-    fitness = cm_term + ld_term
+    # encourage low drag directly
+    drag_penalty = 125 * cd_corr
 
-    smooth_penalty = np.sum(np.maximum(0, np.abs(np.diff(delta_y_smooth)) - 0.05)**2)
-    fitness -= 0.05 * smooth_penalty / num_ctrl
+    fitness = cm_term + ld_term - drag_penalty
+
+    # discourage extreme lift spikes
+    if cl_corr > 1.6:
+        fitness -= 20 * (cl_corr - 1.6)
+
+    smooth_penalty = np.sum(np.maximum(0, np.abs(np.diff(delta_y_smooth)) - 0.05) ** 2)
+    fitness -= 0.2 * smooth_penalty / num_ctrl
 
     d2yc_dx2 = np.gradient(np.gradient(yc, x_dense), x_dense)
-    center_mask_penalty = (x_dense > 0.33) & (x_dense < 0.66)
+    center_mask_penalty = (x_dense > 0.40) & (x_dense < 0.60)
     curvature_violation = np.maximum(0, np.abs(d2yc_dx2[center_mask_penalty]) - 0.8)
-    fitness -= 0.3 * np.mean(curvature_violation ** 2)
+    fitness -= 1.5 * np.mean(curvature_violation ** 2)
 
     fitness -= 0.1 * (np.std(delta_y_smooth[:5]) + np.std(delta_y_smooth[5:])) / 0.05
 
     d2yu_dx2 = np.gradient(np.gradient(yu, x_dense), x_dense)
     d2yl_dx2 = np.gradient(np.gradient(yl, x_dense), x_dense)
     mask = (x_dense > 0.2) & (x_dense < 0.8)
-    fitness -= 0.3 * (np.mean(d2yu_dx2[mask] ** 2) + np.mean(d2yl_dx2[mask] ** 2))
+    fitness -= 0.8 * (np.mean(d2yu_dx2[mask] ** 2) + np.mean(d2yl_dx2[mask] ** 2))
+
+    fitness += 0.05 * np.sum(np.abs(delta_y_smooth))
+
+    genome.cm = cm_corr
+    genome.clcd = cl_corr / cd_corr
 
     return fitness
 
-# ================== CM-ONLY EVALUATION ======================
-def compute_cm_only(genome, config, target_aoa):
-    net = neat.nn.FeedForwardNetwork.create(genome, config)
-
-    X_input_net = np.hstack([y_ctrl_base, target_aoa]).reshape(1, -1)
-    raw_output = np.array(net.activate(X_input_net.flatten()))[:num_ctrl]
-    delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
-    delta_y_smooth = gaussian_filter1d(delta_y, sigma=2.0)
-    y_ctrl = y_ctrl_base + delta_y_smooth
-
-    yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
-    yc = gaussian_filter1d(yc, sigma=2.0)
-
-    xu, yu, xl, yl = compute_airfoil(x_dense, yc, yt_base)
-    coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
-
-    aero = get_aero_from_coordinates(
-        coordinates=coords,
-        alpha=[target_aoa],
-        Re=REYNOLDS,
-        model_size="xxxlarge",
-        n_crit=9.0,
-        xtr_upper=1.0,
-        xtr_lower=1.0
-    )
-
-    cm_nf = aero["CM"][0]
-
-    dy_vec = delta_y_smooth
-    dy_cumsum = np.cumsum(dy_vec)
-    dy_dx = np.gradient(dy_vec, x_ctrl)
-    d2y_dx2 = np.gradient(dy_dx, x_ctrl)
-
-    X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
-    cm_corr = cm_nf - model_cm.predict(X_input_gb)[0]
-
-    return cm_corr
-
-# ================== CL/CD-ONLY EVALUATION ===================
-# >>> ADDED
-def compute_clcd_only(genome, config, target_aoa):
-    net = neat.nn.FeedForwardNetwork.create(genome, config)
-
-    X_input_net = np.hstack([y_ctrl_base, target_aoa]).reshape(1, -1)
-    raw_output = np.array(net.activate(X_input_net.flatten()))[:num_ctrl]
-    delta_y = np.clip(raw_output * max_offsets * 2.0, -max_offsets, max_offsets)
-    delta_y_smooth = gaussian_filter1d(delta_y, sigma=2.0)
-    y_ctrl = y_ctrl_base + delta_y_smooth
-
-    yc = smooth_camber(x_ctrl, y_ctrl, x_dense)
-    yc = gaussian_filter1d(yc, sigma=2.0)
-
-    xu, yu, xl, yl = compute_airfoil(x_dense, yc, yt_base)
-    coords = prepare_coordinates_for_neuralfoil(xu, yu, xl, yl)
-
-    aero = get_aero_from_coordinates(
-        coordinates=coords,
-        alpha=[target_aoa],
-        Re=REYNOLDS,
-        model_size="xxxlarge",
-        n_crit=9.0,
-        xtr_upper=1.0,
-        xtr_lower=1.0
-    )
-
-    cl_nf = aero["CL"][0]
-    cd_nf = aero["CD"][0]
-
-    dy_vec = delta_y_smooth
-    dy_cumsum = np.cumsum(dy_vec)
-    dy_dx = np.gradient(dy_vec, x_ctrl)
-    d2y_dx2 = np.gradient(dy_dx, x_ctrl)
-
-    X_input_gb = np.hstack([dy_vec, dy_cumsum, dy_dx, d2y_dx2, target_aoa]).reshape(1, -1)
-
-    cl_corr = cl_nf - model_cl.predict(X_input_gb)[0]
-    cd_corr = max(cd_nf - model_cd.predict(X_input_gb)[0], 1e-3)
-
-    return cl_corr / cd_corr
-
 # ================== NEAT TRAINING ===========================
-def train_for_aoa(target_aoa, generations=50):
+def train_for_aoa(target_aoa, generations=50, seed_genome=None):
+    global CURRENT_GEN
+    overall_best_genome = None
+    overall_best_fitness = -np.inf
+
     config = neat.Config(
         neat.DefaultGenome,
         neat.DefaultReproduction,
@@ -317,88 +224,168 @@ def train_for_aoa(target_aoa, generations=50):
         neat.DefaultStagnation,
         "NEAT Config Single Genome.ini"
     )
+
+    # Initialize population
     pop = neat.Population(config)
     pop.add_reporter(neat.StdOutReporter(True))
-
     stats = neat.StatisticsReporter()
     pop.add_reporter(stats)
 
+    if seed_genome is not None:
+        genome0 = list(pop.population.values())[0]
+
+        # Copy weights ONLY for matching connections
+        for key in genome0.connections:
+            if key in seed_genome.connections:
+                genome0.nodes[key].bias = seed_genome.nodes[key].bias
+
+        print("Seed genome weights copied (structure preserved)")
+
+    # ===== LIVE TRAINING PLOT AS SUBPLOTS =====
+    plt.ion()
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    fig.suptitle(
+        f"NEAT Training Convergence — AoA {target_aoa}°, Re={re_folder}",
+        fontsize=16,
+        fontweight='bold'
+    )
+
+    cm_history, clcd_history = [], []
+
+    # Plot CM and CM limit on the same axis
+    cm_line, = ax1.plot([], [], color='#1f77b4', label="|CM|")
+    limit_line, = ax1.plot([], [], "--", color='gray', label="CM Limit")
+    ax1.set_ylabel("Pitching Moment", fontsize=12, fontweight='bold')
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    ax1.set_title("Live Pitching Moment (CM) during NEAT Training", fontsize=14, fontweight='bold')
+    ax1.legend(loc='upper right', fontsize=10)
+
+    # CL/CD subplot
+    ax2_line, = ax2.plot([], [], color='#ff7f0e', label="CL/CD")
+    ax2.set_ylabel("Corrected CL/CD", fontsize=12, fontweight='bold')
+    ax2.set_xlabel("Generation", fontsize=12, fontweight='bold')
+    ax2.grid(True, linestyle='--', alpha=0.5)
+    ax2.set_title("Live Corrected CL/CD during NEAT Training", fontsize=14, fontweight='bold')
+    ax2.legend(loc='upper right', fontsize=10)
+
     def eval_genomes(genomes, config):
+        nonlocal overall_best_genome, overall_best_fitness
         global CURRENT_GEN
-        # Evaluate fitness for each genome
+
+        gen_best_genome = None
+        gen_best_fitness = -np.inf
+
+        # Evaluate all genomes in the generation
         for gid, genome in genomes:
             genome.fitness = compute_fitness(genome, config, target_aoa)
 
-        # Increment the generation counter after evaluating all genomes
+            if genome.fitness > gen_best_fitness:
+                gen_best_fitness = genome.fitness
+                gen_best_genome = genome
+
+        # Update overall best genome if needed
+        if gen_best_fitness > overall_best_fitness:
+            overall_best_fitness = gen_best_fitness
+            overall_best_genome = gen_best_genome
+
+        # Use the overall best genome for live plotting
+        best_cm = abs(overall_best_genome.cm)
+        best_ld = overall_best_genome.clcd
+        cm_history.append(best_cm)
+        clcd_history.append(best_ld)
+
+        # Update live plots
+        cm_line.set_data(range(len(cm_history)), cm_history)
+        limit_line.set_data(range(len(cm_history)), [get_cm_limit(g) for g in range(len(cm_history))])
+        ax2_line.set_data(range(len(clcd_history)), clcd_history)
+        ax1.relim()
+        ax1.autoscale_view()
+        ax2.relim();
+        ax2.autoscale_view()
+        plt.draw();
+        plt.pause(0.001)
+
         CURRENT_GEN += 1
 
     winner = pop.run(eval_genomes, generations)
 
-    # ================== SAVE DIRECTORY STRUCTURE ==================
-    aoa_folder = f"{int(target_aoa)} Degrees"
-
+    # ================== SAVE BEST GENOME ==================
+    aoa_folder = f"{target_aoa:.2f} Degrees"
     save_dir = os.path.join("BestGenomes", f"Re{re_folder}", aoa_folder)
     os.makedirs(save_dir, exist_ok=True)
-
     with open(os.path.join(save_dir, "best_genome_nf.pkl"), "wb") as f:
         pickle.dump(winner, f)
+    draw_net(config, winner, view=False, filename=os.path.join(save_dir, "best_network"))
 
-    draw_net(
-        config,
-        winner,
-        view=True,
-        filename=os.path.join(save_dir, "best_network")
+    # ================== FINAL CONVERGENCE PLOTS ==================
+    plt.ioff()  # turn off interactive mode
+
+    fig_final, (ax1_final, ax2_final) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    fig_final.suptitle(
+        f"NEAT Training Convergence — AoA {target_aoa}°, Re={re_folder}",
+        fontsize=16,
+        fontweight='bold'
     )
 
-    # ================== CONVERGENCE PLOTS ==================
+    # ---------- CM subplot ----------
+    ax1_final.plot(cm_history, color='#1f77b4', label="|CM|")  # blue
+    ax1_final.plot([get_cm_limit(g) for g in range(len(cm_history))], '--', color='gray', label="CM Limit")  # CM limit
 
-    cm_history = []
-    clcd_history = []
+    ax1_final.set_ylabel("|CM|", fontsize=12, fontweight='bold')
+    ax1_final.set_title("Pitching Moment (CM) Convergence", fontsize=14, fontweight='bold')
+    ax1_final.grid(True, linestyle='--', alpha=0.5)
+    ax1_final.legend(loc='upper right', fontsize=10)
 
-    best_fitness = -np.inf
-    best_genome_so_far = None
+    # ---------- CL/CD subplot ----------
+    ax2_final.plot(clcd_history, color='#ff7f0e', label="CL/CD")  # orange
 
-    for genome in stats.most_fit_genomes:
+    ax2_final.set_ylabel("Corrected CL/CD", fontsize=12, fontweight='bold')
+    ax2_final.set_xlabel("Generation", fontsize=12, fontweight='bold')
+    ax2_final.set_title("Lift-to-Drag Ratio (CL/CD) Convergence", fontsize=14, fontweight='bold')
+    ax2_final.grid(True, linestyle='--', alpha=0.5)
+    ax2_final.legend(loc='upper right', fontsize=10)
 
-        if genome.fitness > best_fitness:
-            best_fitness = genome.fitness
-            best_genome_so_far = genome
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
 
-        try:
-            cm = compute_cm_only(best_genome_so_far, config, target_aoa)
-            clcd = compute_clcd_only(best_genome_so_far, config, target_aoa)
+    # ================= SAVE FIGURE =================
+    plot_path = os.path.join(save_dir, "training_convergence.png")
+    fig_final.savefig(plot_path, dpi=300)
 
-            cm_history.append(abs(cm))
-            clcd_history.append(clcd)
+    print(f"Saved convergence plot to: {plot_path}")
 
-        except Exception:
-            cm_history.append(np.nan)
-            clcd_history.append(np.nan)
+    # show the final plot briefly
+    plt.show(block=False)
+    plt.pause(3)  # seconds to display the plot
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 8), sharex=True)
-
-    # CM subplot
-    ax1.plot(cm_history)
-    ax1.set_ylabel("|Corrected CM|")
-    ax1.set_title("Evolutionary Convergence for Reynolds 5e4")
-    ax1.grid(True)
-
-    # CL/CD subplot
-    ax2.plot(clcd_history)
-    ax2.set_ylabel("Corrected CL/CD")
-    ax2.set_xlabel("Generation")
-    ax2.grid(True)
-
-    plt.tight_layout()
-
-    plt.savefig(
-        os.path.join(save_dir, "training_convergence.png"),
-        dpi=300
-    )
-
-    plt.show()
-
-    print("✅ Training complete!")
+    # ================= CLEANUP =================
+    plt.close(fig)
+    plt.close(fig_final)
+    plt.close('all')
 
 # ================== RUN TRAINING ===========================
-train_for_aoa(AoA, generations=Gen)
+# train_for_aoa(-3.75, generations=Gen)
+
+aoa_values = np.arange(-5.00, 12.50 + 0.001, 0.25)
+
+seed_genome = None
+for i, aoa in enumerate(aoa_values):
+    print("\n=======================================")
+    print(f"Starting training for AoA = {aoa:.2f}°")
+    print("=======================================\n")
+
+    CURRENT_GEN = 0
+
+    # Load previous AoA best genome as seed
+    if i > 0:
+        prev_aoa = aoa_values[i-1]
+        prev_folder = os.path.join("BestGenomes", f"Re{re_folder}", f"{prev_aoa:.2f} Degrees")
+        prev_file = os.path.join(prev_folder, "best_genome_nf.pkl")
+        if os.path.exists(prev_file):
+            with open(prev_file, "rb") as f:
+                seed_genome = pickle.load(f)
+            print(f"Loaded best genome from AoA {prev_aoa:.2f}° as seed.")
+        else:
+            seed_genome = None
+            print("No previous genome found; starting from scratch.")
+
+    train_for_aoa(aoa, generations=Gen, seed_genome=seed_genome)

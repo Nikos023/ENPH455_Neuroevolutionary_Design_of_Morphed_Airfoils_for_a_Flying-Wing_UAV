@@ -4,7 +4,7 @@ import os
 # === CONFIGURATION ==========================================
 # ============================================================
 
-results_dir = "Simulation Results 5000Re1e5"
+results_dir = "Simulation Results 5000Re5e4"
 repaneled_dir = "Repaneled Geometry"
 repaneled_base = "airfoil_xfoil_repaneled_"
 
