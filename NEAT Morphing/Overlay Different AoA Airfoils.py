@@ -23,7 +23,7 @@ import joblib
 # USER SETTINGS
 # ================================
 base_dir = "BestGenomes"
-REYNOLDS = 1e5
+REYNOLDS = 1e6
 re_folder = f"{REYNOLDS:.0e}".replace("+0","").replace("+","")
 config_path = "NEAT Config Single Genome.ini"
 num_ctrl = 10
@@ -438,7 +438,7 @@ plt.gca().invert_yaxis()
 plt.grid(True)
 plt.xlabel("x/c", fontweight='bold')
 plt.ylabel("Cp", fontweight='bold')
-plt.title("Cp(x) Overlay Across AoA", fontsize=16, fontweight='bold')
+plt.title(f"Cp(x) Overlay Across AoA @ Re={re_folder}", fontsize=16, fontweight='bold')
 
 sm = plt.cm.ScalarMappable(
     cmap="viridis",
@@ -462,6 +462,7 @@ gs = fig.add_gridspec(2, 2, width_ratios=[1, 0.03], height_ratios=[1,1], hspace=
 ax1 = fig.add_subplot(gs[0,0])
 ax2 = fig.add_subplot(gs[1,0], sharex=ax1)
 
+fig.suptitle(f"Cp(x) Overlay with Airfoil Geometry Across AoA @ Re={re_folder}", fontsize=16, fontweight='bold')
 # --- Cp ---
 for i, (AoA, x_cp, cp) in enumerate(cp_data):
     color = plt.cm.viridis(i / len(cp_data))
@@ -533,7 +534,7 @@ for i in range(num_ctrl):
 plt.grid(True)
 plt.xlabel("Angle of Attack (°)", fontweight='bold')
 plt.ylabel("Δy (chord units)", fontweight='bold')
-plt.title("Control Point Physical Δy vs AoA", fontsize=16, fontweight='bold')
+plt.title(f"Control Point Physical Δy vs AoA @ Re={re_folder}", fontsize=16, fontweight='bold')
 
 plt.legend(loc="lower right", ncol=2)
 plt.tight_layout()
@@ -560,7 +561,7 @@ plt.axhline(-1.0, color='k', linestyle='--', alpha=0.3)
 plt.grid(True)
 plt.xlabel("Angle of Attack (°)", fontweight='bold')
 plt.ylabel("Normalized Δy / max_offset", fontweight='bold')
-plt.title("Control Point Usage vs AoA", fontsize=16, fontweight='bold')
+plt.title(f"Control Point Usage vs AoA @ Re={re_folder}", fontsize=16, fontweight='bold')
 
 plt.legend(loc="lower right", ncol=2)
 plt.tight_layout()
@@ -575,10 +576,11 @@ plt.imshow(
     extent=[aoa_sorted.min(), aoa_sorted.max(), 1, num_ctrl]
 )
 
-plt.colorbar(label="Δy (chord units)")
+cbar = plt.colorbar(label="Δy (chord units)")
+cbar.set_label("Δy (chord units)", fontweight='bold')
 plt.xlabel("Angle of Attack (°)", fontweight='bold')
 plt.ylabel("Control Point Index", fontweight='bold')
-plt.title("Control Point Δy Heatmap vs AoA", fontsize=16, fontweight='bold')
+plt.title(f"Control Point Δy Heatmap vs AoA @ Re={re_folder}", fontsize=16, fontweight='bold')
 
 plt.tight_layout()
 plt.show()
@@ -598,33 +600,466 @@ if reduced[0, 0] > 0:  # flip condition depends on your reference
 # Plot
 plt.figure(figsize=(8, 6))
 plt.scatter(reduced[:, 0], reduced[:, 1], c=aoa_sorted, cmap='viridis')
-plt.colorbar(label="AoA (°)")
+cbar = plt.colorbar(label="AoA (°)")
+cbar.set_label("AoA (°)", fontweight='bold')
 
-plt.xlabel("PC1 (Airfoil Shape)", fontweight='bold')
-plt.ylabel("PC2 (Pitching Moment Control)", fontweight='bold')
-plt.title("Control Strategy Manifold", fontsize=14, fontweight='bold')
+plt.xlabel("PC1 (Reflex / Moment Control)", fontweight='bold')
+plt.ylabel("PC2 (Camber Deformation)", fontweight='bold')
+plt.title(f"Control Strategy Manifold @ Re={re_folder}", fontsize=14, fontweight='bold')
 
 plt.tight_layout()
 plt.show()
 
-# print("PC1:", pca.components_[0])
-# print("PC2:", pca.components_[1])
-#
-# plt.figure(figsize=(8,4))
-# for i in range(num_ctrl):
-#     plt.bar(i+1, pca.components_[0][i])
-# plt.xlabel("Control Point Index")
-# plt.ylabel("PC1 Weight")
-# plt.title("Contribution of Control Points to PC1")
-# plt.show()
-#
-# mode_scale = 1.0  # adjust for visualization
-# for i, pc in enumerate(pca.components_[:2]):  # PC1 and PC2
-#     plt.figure()
-#     delta_mode = pc * mode_scale * max_offsets  # scale back to Δy
-#     plt.plot(range(1, num_ctrl+1), delta_mode, 'o-')
-#     plt.xlabel("Control Point Index")
-#     plt.ylabel("Δy (chord units)")
-#     plt.title(f"PC{i+1} Mode Shape")
-#     plt.grid(True)
-#     plt.show()
+aoa_mean = np.mean(aoa_sorted)
+aoa_std = np.std(aoa_sorted)
+aoa_norm = (aoa_sorted - aoa_mean) / aoa_std
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import CubicSpline
+
+# -----------------------------
+# Build spline models per CP
+# -----------------------------
+splines = []
+
+for i in range(num_ctrl):
+    cs = CubicSpline(
+        aoa_sorted,
+        delta_matrix[:, i],
+        bc_type=((1, 0.0), (1, 0.0))  # zero slope at ends (often more stable)
+    )
+    splines.append(cs)
+
+# -----------------------------
+# Prediction function
+# -----------------------------
+def predict_delta(aoa):
+    """
+    Input:
+        aoa : scalar or array of angles of attack (deg)
+
+    Output:
+        Δy : array shape (N, num_ctrl)
+    """
+    aoa = np.atleast_1d(aoa)
+
+    # Clamp to avoid bad extrapolation
+    aoa = np.clip(aoa, aoa_sorted.min(), aoa_sorted.max())
+
+    deltas = np.zeros((len(aoa), num_ctrl))
+
+    for i in range(num_ctrl):
+        deltas[:, i] = splines[i](aoa)
+
+    return deltas
+
+
+# -----------------------------
+# Example usage
+# -----------------------------
+aoa_test = 5.5
+delta_pred = predict_delta(aoa_test)
+
+print(f"AoA = {aoa_test}°")
+for i, val in enumerate(delta_pred[0]):
+    print(f"CP {i+1}: Δy = {val:.6f}")
+
+
+# -----------------------------
+# Plot spline fits
+# -----------------------------
+aoa_fine = np.linspace(aoa_sorted.min(), aoa_sorted.max(), 300)
+
+# -----------------------------
+# Compute R² for spline fits
+# -----------------------------
+r2_scores = []
+
+for i in range(num_ctrl):
+    y_true = delta_matrix[:, i]
+    y_pred = splines[i](aoa_sorted)
+
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+
+    r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 1.0
+    r2_scores.append(r2)
+
+    print(f"CP {i+1}: R² = {r2:.6f}")
+
+r2_scores = np.array(r2_scores)
+
+print("\nAverage R²:", np.mean(r2_scores))
+print("Min R²:", np.min(r2_scores))
+
+plt.figure(figsize=(10, 8))
+
+for i in range(num_ctrl):
+    # Original data
+    marker_plot, = plt.plot(
+        aoa_sorted,
+        delta_matrix[:, i],
+        'o',
+        markersize=5,
+        label=f"CP {i + 1} Data"
+    )
+    color = marker_plot.get_color()
+
+    # Spline fit
+    fit_curve = splines[i](aoa_fine)
+
+    plt.plot(
+        aoa_fine,
+        fit_curve,
+        '-',
+        linewidth=2,
+        alpha=0.9,
+        color=color,
+        label=f"CP {i + 1} Spline (R²={r2_scores[i]:.4f})"
+    )
+
+    # Bounds
+    plt.plot(aoa_fine, [max_offsets[i]] * len(aoa_fine), 'k--', alpha=0.1)
+    plt.plot(aoa_fine, [-max_offsets[i]] * len(aoa_fine), 'k--', alpha=0.1)
+
+plt.grid(True)
+plt.xlabel("Angle of Attack (°)", fontweight='bold')
+plt.ylabel("Δy (chord units)", fontweight='bold')
+plt.title(
+    f"Control Point Δy vs AoA (Cubic Spline Fit) @ Re={re_folder}",
+    fontsize=16,
+    fontweight='bold'
+)
+plt.legend(loc="lower right", ncol=2, fontsize=8)
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# Residuals plot
+# -----------------------------
+plt.figure(figsize=(10, 8))
+
+for i in range(num_ctrl):
+    y_pred = splines[i](aoa_sorted)
+    residuals = delta_matrix[:, i] - y_pred
+
+    plt.plot(
+        aoa_sorted,
+        residuals,
+        'o',
+        markersize=5,
+        label=f"CP {i + 1}"
+    )
+
+plt.axhline(0, color='k', alpha=0.5)
+
+plt.grid(True)
+plt.xlabel("Angle of Attack (°)", fontweight='bold')
+plt.ylabel("Residual Δy (chord units)", fontweight='bold')
+plt.title(
+    f"Residuals of Spline Fit @ Re={re_folder}",
+    fontsize=16,
+    fontweight='bold'
+)
+plt.legend(loc="upper right", ncol=2, fontsize=8)
+plt.tight_layout()
+plt.show()
+
+# ================================
+# AIRFOIL RECONSTRUCTION COMPARISON
+# ================================
+
+def reconstruct_airfoil_from_delta(delta_y):
+    y_ctrl_base = y_ctrl_base_function()
+    y_ctrl_new = y_ctrl_base + delta_y
+
+    yc_new = smooth_camber(x_ctrl, y_ctrl_new, x_dense)
+
+    # --- center lock (same as training) ---
+    center_start, center_end = 0.40, 0.60
+    center_mask = (x_dense > center_start) & (x_dense < center_end)
+
+    coeffs = np.polyfit(
+        x_dense[center_mask],
+        yc_base[center_mask],
+        1
+    )
+    yc_trend = np.polyval(coeffs, x_dense[center_mask])
+
+    blend_x = (x_dense[center_mask] - center_start) / (center_end - center_start)
+    weights = 0.5 * (1 - np.cos(np.pi * blend_x)) * 0.6
+
+    yc_new[center_mask] = (1 - weights) * yc_new[center_mask] + weights * yc_trend
+    yc_new = gaussian_filter1d(yc_new, sigma=2.0)
+
+    xu, yu, xl, yl = compute_airfoil(x_dense, yc_new, yt_base)
+
+    return xu, yu, xl, yl
+
+
+# -----------------------------
+# Choose AoA to compare
+# -----------------------------
+aoa_test = 5.5  # change this
+
+# --- TRUE (from NEAT dataset) ---
+idx = np.argmin(np.abs(aoa_sorted - aoa_test))
+aoa_true = aoa_sorted[idx]
+delta_true = delta_matrix[idx]
+
+# --- PREDICTED (from spline) ---
+delta_pred = predict_delta(aoa_test)[0]
+
+# --- Reconstruct both ---
+xu_true, yu_true, xl_true, yl_true = reconstruct_airfoil_from_delta(delta_true)
+xu_pred, yu_pred, xl_pred, yl_pred = reconstruct_airfoil_from_delta(delta_pred)
+
+
+# -----------------------------
+# Plot overlay
+# -----------------------------
+plt.figure(figsize=(10, 6))
+
+# TRUE airfoil (NEAT)
+plt.plot(xu_true, yu_true, 'k-', lw=2.5, label=f"True (NEAT) @ {aoa_true:.2f}°")
+plt.plot(xl_true, yl_true, 'k-', lw=2.5)
+
+# PREDICTED airfoil (Spline)
+plt.plot(xu_pred, yu_pred, 'r--', lw=2, label=f"Spline @ {aoa_test:.2f}°")
+plt.plot(xl_pred, yl_pred, 'r--', lw=2)
+
+plt.axis("equal")
+plt.grid(True)
+plt.xlabel("x/c", fontweight='bold')
+plt.ylabel("y/c", fontweight='bold')
+plt.title(f"Airfoil Reconstruction Comparison @ Re={re_folder}", fontsize=16, fontweight='bold')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+# -----------------------------
+# Plot difference (error)
+# -----------------------------
+plt.figure(figsize=(10, 4))
+
+# Interpolate onto same x grid (they already are, but keep safe)
+error_upper = yu_pred - yu_true
+error_lower = yl_pred - yl_true
+
+plt.plot(x_dense, error_upper, label="Upper Surface Error")
+plt.plot(x_dense, error_lower, label="Lower Surface Error")
+
+plt.axhline(0, color='k', linestyle='--', alpha=0.5)
+
+plt.grid(True)
+plt.xlabel("x/c", fontweight='bold')
+plt.ylabel("Δy Error", fontweight='bold')
+plt.title("Reconstruction Error (Spline vs NEAT)", fontsize=14, fontweight='bold')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# ================================
+# CONTINUOUS SPLINE SWEEP (OFFSET AoA)
+# ================================
+
+aoa_sweep = np.arange(-5, 12.01, 0.25)
+aoa_sweep_offset = aoa_sweep + 0.1  # <-- your offset
+
+cl_spline_list = []
+cd_spline_list = []
+cm_spline_list = []
+ld_spline_list = []
+
+print("\nRunning spline-based continuous AoA sweep...")
+
+for aoa in aoa_sweep_offset:
+
+    # -----------------------------
+    # Predict Δy from spline
+    # -----------------------------
+    delta = predict_delta(aoa)[0]
+
+    # Clamp for safety
+    delta = np.clip(delta, -max_offsets, max_offsets)
+
+    # -----------------------------
+    # Reconstruct airfoil
+    # -----------------------------
+    xu, yu, xl, yl = reconstruct_airfoil_from_delta(delta)
+
+    # -----------------------------
+    # Compute aero
+    # -----------------------------
+    cl, cd, cm = apply_gb_correction(delta, xu, yu, xl, yl, aoa)
+
+    cl_spline_list.append(cl)
+    cd_spline_list.append(cd)
+    cm_spline_list.append(cm)
+    ld_spline_list.append(cl / cd)
+
+    print(f"AoA {aoa:.2f}° → CL={cl:.5f} CD={cd:.5f} CM={cm:.5f}")
+
+# Convert to arrays
+cl_spline_arr = np.array(cl_spline_list)
+cd_spline_arr = np.array(cd_spline_list)
+cm_spline_arr = np.array(cm_spline_list) / 4
+ld_spline_arr = np.array(ld_spline_list)
+
+# ================================
+# PLOT: CL/CD COMPARISON
+# ================================
+plt.figure(figsize=(10,6))
+
+# Original NEAT (discrete)
+plt.plot(
+    aoa_vals,
+    ld_vals,
+    'o-',
+    lw=2,
+    label="NEAT Optimization (Discrete)",
+    color="tab:blue"
+)
+
+# Spline reconstruction (offset)
+plt.plot(
+    aoa_sweep_offset,
+    ld_spline_arr,
+    '-',
+    lw=2.5,
+    label="Spline Reconstruction (+0.1° offset)",
+    color="tab:red"
+)
+
+plt.grid(True)
+plt.xlabel("Angle of Attack (°)", fontweight='bold')
+plt.ylabel("CL/CD", fontweight='bold')
+plt.title(f"CL/CD Comparison (NEAT vs Spline) @ Re={re_folder}", fontsize=16, fontweight='bold')
+
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+# ================================
+# PLOT: CM COMPARISON
+# ================================
+plt.figure(figsize=(10,6))
+
+# Original NEAT
+plt.plot(
+    aoa_vals,
+    cm_vals,
+    'o-',
+    lw=2,
+    label="NEAT Optimization (Discrete)",
+    color="tab:blue"
+)
+
+# Spline reconstruction
+plt.plot(
+    aoa_sweep_offset,
+    cm_spline_arr,
+    '-',
+    lw=2.5,
+    label="Spline Reconstruction (+0.1° offset)",
+    color="tab:red"
+)
+
+plt.grid(True)
+plt.xlabel("Angle of Attack (°)", fontweight='bold')
+plt.ylabel("CM", fontweight='bold')
+plt.title(f"CM Comparison (NEAT vs Spline) @ Re={re_folder}", fontsize=16, fontweight='bold')
+
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# ================================
+# PERFORMANCE COMPARISON TABLE
+# ================================
+import pandas as pd
+
+# Convert lists to arrays for convenience
+aoa_arr = np.array(aoa_vals)
+cl_neat = np.array(cl_vals)
+cd_neat = np.array(cd_vals)
+cm_neat = np.array(cm_vals)
+ld_neat = cl_neat / cd_neat
+
+cl_base = np.array(xfoil_filtered["Cl"])
+cd_base = np.array(xfoil_filtered["Cd"])
+cm_base = np.array(xfoil_filtered["Cm"])
+ld_base = cl_base / cd_base
+
+# Ensure AoA alignment
+# Interpolate NEAT results at XFOIL AoA points
+cl_neat_interp = np.interp(xfoil_filtered["Alpha"], aoa_arr, cl_neat)
+cd_neat_interp = np.interp(xfoil_filtered["Alpha"], aoa_arr, cd_neat)
+cm_neat_interp = np.interp(xfoil_filtered["Alpha"], aoa_arr, cm_neat)
+ld_neat_interp = cl_neat_interp / cd_neat_interp
+
+# Compute improvements
+ld_improvement = 100 * (ld_neat_interp - ld_base) / ld_base
+cm_delta = cm_neat_interp - cm_base
+
+# Absolute Cm
+cm_abs_base = np.abs(cm_base)
+cm_abs_neat = np.abs(cm_neat_interp)
+
+# ================================
+# AVERAGE IMPROVEMENT vs NACA2412
+# ================================
+from scipy.interpolate import interp1d
+
+# Interpolate NACA2412 XFOIL CL/CD and CM to NEAT AoA points
+clcd_naca_interp = interp1d(
+    xfoil_filtered["Alpha"],
+    xfoil_filtered["CL_CD"],
+    kind='linear',
+    fill_value="extrapolate"
+)(aoa_vals)
+
+cm_naca_interp = interp1d(
+    xfoil_filtered["Alpha"],
+    xfoil_filtered["Cm"],
+    kind='linear',
+    fill_value="extrapolate"
+)(aoa_vals)
+
+# Ensure CL/CD is calculated as Cl / Cd directly (no percent scaling)
+xfoil_filtered["CL_CD"] = xfoil_filtered["Cl"] / xfoil_filtered["Cd"]
+
+# Interpolate NACA2412 CL/CD and CM to NEAT AoA points
+clcd_naca_interp = np.interp(aoa_vals, xfoil_filtered["Alpha"], xfoil_filtered["CL_CD"])
+cm_naca_interp   = np.interp(aoa_vals, xfoil_filtered["Alpha"], xfoil_filtered["Cm"])
+
+# Compute improvement as relative to baseline
+ld_vals_arr = np.array(ld_vals)
+cm_vals_arr = np.array(cm_vals)
+
+ld_improvement_pct = 100 * (ld_vals_arr - clcd_naca_interp) / clcd_naca_interp
+cm_delta = cm_vals_arr - cm_naca_interp
+cm_improvement_pct = 100 * cm_delta / np.abs(cm_naca_interp)  # absolute CM baseline
+
+# Compute averages
+avg_ld_base = np.mean(clcd_naca_interp)
+avg_ld_neat = np.mean(ld_vals_arr)
+avg_ld_improvement = ((avg_ld_neat - avg_ld_base)/ avg_ld_base) * 100
+
+avg_cm_base = np.mean(cm_naca_interp)
+avg_cm_neat = np.mean(cm_vals_arr)
+avg_cm_delta = np.mean(cm_delta)
+avg_cm_improvement = np.mean(cm_improvement_pct)
+
+print("\n📊 AVERAGE PERFORMANCE VS NACA2412 @ Re={:.0e}".format(REYNOLDS))
+print(f"Average CL/CD (NACA2412): {avg_ld_base:.5f}")
+print(f"Average CL/CD (NEAT):      {avg_ld_neat:.5f}")
+print(f"Average CL/CD Improvement (%): {avg_ld_improvement:.2f}%\n")
+
+print(f"Average CM (NACA2412): {avg_cm_base:.5f}")
+print(f"Average CM (NEAT):     {avg_cm_neat:.5f}")
+print(f"Average ΔCM:           {avg_cm_delta:.5f}")
+print(f"Average CM Improvement (%): {avg_cm_improvement:.2f}%")

@@ -9,7 +9,7 @@ import matplotlib as mpl
 # USER SETTINGS
 # ================================
 base_dir = "BestGenomes"
-AoA = 12.00
+AoA = 5.00
 aoa_folder = f"{AoA:.2f} Degrees"
 
 # ================================
@@ -67,9 +67,9 @@ if not found_any:
 
 plt.axis("equal")
 plt.grid(True)
-plt.xlabel("x / chord")
-plt.ylabel("y / chord")
-plt.title(f"Optimized Airfoils Overlay @ AoA = {AoA}°")
+plt.xlabel("x / chord",  fontweight='bold')
+plt.ylabel("y / chord",  fontweight='bold')
+plt.title(f"Optimized Airfoils Overlay @ AoA = {AoA}°",  fontweight='bold')
 
 # Colorbar based on Reynolds number
 sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)

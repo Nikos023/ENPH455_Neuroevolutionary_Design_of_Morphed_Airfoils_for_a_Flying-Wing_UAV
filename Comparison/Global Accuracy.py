@@ -12,34 +12,24 @@ import joblib
 geom_dir = "../Morphing/Geometry/"
 comparison_dir = "../Comparison/Comparison Results"
 
-Re = 2e5
+Re_list = [1e6, 5e5, 2e5, 1e5, 5e4]
+
 alpha_common = np.linspace(-5, 12, 200)
 EPS = 1e-6
 MAX_AIRFOILS = 2001
 
-# --- Automatic folder / file naming ---
+# ============================================================
+# === HELPERS ================================================
+# ============================================================
+
 def format_re(re):
     return f"{re:.0e}".replace("+0", "").replace("+", "")
 
-re_folder = f"Re{format_re(Re)}"
+def mae(pred, truth):
+    return np.mean(np.abs(pred - truth))
 
-xfoil_dir = os.path.join("../XFOIL", f"Simulation Results 5000{re_folder}")
-nf_dir    = os.path.join("../NeuralFoil", f"Simulation Results 5000{re_folder}")
-
-model_dir = os.path.join(comparison_dir, "global_model/2000gb", re_folder)
-os.makedirs(model_dir, exist_ok=True)
-
-# ============================================================
-# === LOAD GLOBAL MODELS =====================================
-# ============================================================
-
-model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb.joblib"))
-model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb.joblib"))
-model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
-
-# ============================================================
-# === FILE READING FUNCTIONS =================================
-# ============================================================
+def rmse(pred, truth):
+    return np.sqrt(np.mean((pred - truth)**2))
 
 def read_geometry_file(filename):
     with open(filename, 'r') as f:
@@ -70,46 +60,37 @@ def read_polar(filename):
         return data[:,0], data[:,1], data[:,2], data[:,4]
 
 # ============================================================
-# === ERROR METRICS ==========================================
+# === CORE FUNCTION ==========================================
 # ============================================================
 
-def mae(pred, truth):
-    return np.mean(np.abs(pred - truth))
+def run_for_re(Re):
+    print(f"\n{'='*60}")
+    print(f"🚀 Running for Re = {Re:.0e}".replace("+0","").replace("+",""))
+    print(f"{'='*60}")
 
-def rmse(pred, truth):
-    return np.sqrt(np.mean((pred - truth)**2))
+    re_folder = f"Re{format_re(Re)}"
+    xfoil_dir = os.path.join("../XFOIL", f"Simulation Results 5000{re_folder}")
+    nf_dir    = os.path.join("../NeuralFoil", f"Simulation Results 5000{re_folder}")
+    model_dir = os.path.join(comparison_dir, "global_model/2000gb", re_folder)
 
-# ============================================================
-# === MAIN ===================================================
-# ============================================================
-
-def main():
+    # Load ML models
+    model_cl = joblib.load(os.path.join(model_dir, "global_cl_gb.joblib"))
+    model_cd = joblib.load(os.path.join(model_dir, "global_cd_gb.joblib"))
+    model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
 
     errors_nf = {"Cl": [], "Cd": [], "Cm": []}
     errors_corr = {"Cl": [], "Cd": [], "Cm": []}
 
     geom_files = sorted(glob.glob(os.path.join(geom_dir, "airfoil_points_*.txt")))
     geom_files = geom_files[:MAX_AIRFOILS]
-    total_files = len(geom_files)
-
-    if total_files == 0:
-        print("⚠️ No geometry files found.")
-        return
-
     x_base, y_base = read_geometry_file(geom_files[0])
-    processed, skipped = 0, 0
 
-    print(f"\n🔍 Found {total_files} airfoils — starting processing\n")
-
-    for idx, geom_file in enumerate(geom_files, start=1):
-
+    for geom_file in geom_files:
         airfoil_id = geom_file.split("_")[-1].split(".")[0]
         file_xfoil = os.path.join(xfoil_dir, f"polar_XFOIL_{airfoil_id}_Re{int(Re)}.txt")
         file_nf = os.path.join(nf_dir, f"polar_NeuralFoil_{airfoil_id}_Re{int(Re)}.txt")
 
         if not (os.path.exists(file_xfoil) and os.path.exists(file_nf)):
-            print(f"[{idx:4d}/{total_files}] Airfoil {airfoil_id} → skipped")
-            skipped += 1
             continue
 
         # --- Geometry Features ---
@@ -130,7 +111,6 @@ def main():
         cd_nf_i = interp1d(alpha_nf, cd_nf, fill_value="extrapolate")(alpha_x)
         cm_nf_i = interp1d(alpha_nf, cm_nf, fill_value="extrapolate")(alpha_x)
 
-        # --- Corrected Predictions ---
         cl_corr, cd_corr, cm_corr = [], [], []
 
         for i, a in enumerate(alpha_x):
@@ -149,108 +129,117 @@ def main():
             "Cd": np.interp(alpha_common, alpha_x, np.abs(cd_nf_i - cd_x)),
             "Cm": np.interp(alpha_common, alpha_x, np.abs(cm_nf_i - cm_x)),
         }
-
         err_corr = {
             "Cl": np.interp(alpha_common, alpha_x, np.abs(cl_corr - cl_x)),
             "Cd": np.interp(alpha_common, alpha_x, np.abs(cd_corr - cd_x)),
             "Cm": np.interp(alpha_common, alpha_x, np.abs(cm_corr - cm_x)),
         }
 
-        for c in ["Cl", "Cd", "Cm"]:
+        for c in ["Cl","Cd","Cm"]:
             errors_nf[c].append(err_nf[c])
             errors_corr[c].append(err_corr[c])
 
-        processed += 1
-        print(f"[{idx:4d}/{total_files}] Airfoil {airfoil_id} → processed")
+    # --- Plot Median ± IQR ---
+    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True, constrained_layout=True)
 
-    print(f"\n✅ Finished: {processed} processed, {skipped} skipped")
-
-    # ============================================================
-    # === PLOTTING ==============================================
-    # ============================================================
-
-    plt.style.use("seaborn-v0_8-whitegrid")
-    fig, axs = plt.subplots(3, 1, figsize=(12, 14), sharex=True)
-
-    for ax, coeff, title in zip(axs, ["Cl","Cd","Cm"], ["Lift","Drag","Moment"]):
+    for ax, coeff, title in zip(axs, ["Cl", "Cd", "Cm"], ["Lift", "Drag", "Moment"]):
         nf = np.array(errors_nf[coeff])
         corr = np.array(errors_corr[coeff])
-
         median_nf = np.median(nf, axis=0)
         median_corr = np.median(corr, axis=0)
-        iqr_nf = np.percentile(nf, [25,75], axis=0)
-        iqr_corr = np.percentile(corr, [25,75], axis=0)
+        iqr_nf = np.percentile(nf, [25, 75], axis=0)
+        iqr_corr = np.percentile(corr, [25, 75], axis=0)
 
-        ax.plot(alpha_common, median_nf, label="NeuralFoil", lw=2)
+        ax.plot(alpha_common, median_nf, label="NeuralFoil")
         ax.fill_between(alpha_common, iqr_nf[0], iqr_nf[1], alpha=0.25)
-        ax.plot(alpha_common, median_corr, label="Corrected NeuralFoil", lw=2)
+        ax.plot(alpha_common, median_corr, label="Corrected NeuralFoil")
         ax.fill_between(alpha_common, iqr_corr[0], iqr_corr[1], alpha=0.25)
 
-        ax.set_ylabel(f"{title} |Error|")
-        ax.set_title(f"{title} Absolute Error vs XFOIL Results")
+        ax.set_title(f"{title} Absolute Error vs XFOIL Results", fontsize=12)
+        ax.set_ylabel(f"{title} |Error|", fontsize=12)
 
-    axs[-1].set_xlabel("Angle of Attack (deg)")
+    axs[-1].set_xlabel("Angle of Attack (°)", fontsize=12)
     axs[0].legend()
     plt.suptitle(
-        "Global NeuralFoil Performance vs XFOIL Results at Reynolds 2e5\nMedian ± IQR",
-        fontsize=14,
-        weight="bold"
+        f"Global NeuralFoil Performance vs XFOIL Results at Re = {Re:.0e}".replace("+0", "").replace("+",
+                                                                                                     "") + "\nMedian ± IQR",
+        fontsize=14, weight="bold"
     )
-    plt.tight_layout(rect=[0,0,1,0.95])
     plt.show()
 
-    # ============================================================
-    # === SUMMARY ===============================================
-    # ============================================================
-
-    print("\n" + "="*70)
-    print("OVERALL RESULTS SUMMARY")
-    print("="*70)
-
-    print(f"Airfoils evaluated:     {processed}")
-    print(f"Reynolds number:        {re_folder}")
-    print(f"AoA range:              {alpha_common[0]:.1f}° to {alpha_common[-1]:.1f}°")
-
-    nf_all = np.concatenate([np.concatenate(errors_nf[c]) for c in ["Cl","Cd","Cm"]])
-    corr_all = np.concatenate([np.concatenate(errors_corr[c]) for c in ["Cl","Cd","Cm"]])
-
-    mae_nf = mae(nf_all, 0)
-    mae_corr = mae(corr_all, 0)
-    rmse_nf = rmse(nf_all, 0)
-    rmse_corr = rmse(corr_all, 0)
-    improvement = 100 * (mae_nf - mae_corr) / (mae_nf + EPS)
-
-    print("\nAggregate Error (All Coefficients, All AoA):")
-    print(f"  NeuralFoil  → MAE = {mae_nf:.5f}, RMSE = {rmse_nf:.5f}")
-    print(f"  Corrected   → MAE = {mae_corr:.5f}, RMSE = {rmse_corr:.5f}")
-    print(f"\nOverall Error Reduction: {improvement:.2f}%")
-
-    for coeff, name in zip(["Cl","Cd","Cm"], ["Lift (Cl)", "Drag (Cd)", "Moment (Cm)"]):
+    # --- Return Error Reduction ---
+    improv = {}
+    for coeff in ["Cl","Cd","Cm"]:
         nf_c = np.concatenate(errors_nf[coeff])
         corr_c = np.concatenate(errors_corr[coeff])
-
         mae_nf_c = mae(nf_c, 0)
         mae_corr_c = mae(corr_c, 0)
-        rmse_nf_c = rmse(nf_c, 0)
-        rmse_corr_c = rmse(corr_c, 0)
-        improv_c = 100 * (mae_nf_c - mae_corr_c) / (mae_nf_c + EPS)
+        improv[coeff] = 100 * (mae_nf_c - mae_corr_c) / (mae_nf_c + EPS)
 
-        print(f"\n{name}:")
-        print(f"  NeuralFoil  → MAE = {mae_nf_c:.5f}, RMSE = {rmse_nf_c:.5f}")
-        print(f"  Corrected   → MAE = {mae_corr_c:.5f}, RMSE = {rmse_corr_c:.5f}")
-        print(f"  Error Reduction: {improv_c:.2f}%")
+    # --- Compute combined improvement ---
+    combined_nf = np.concatenate([np.concatenate(errors_nf["Cl"]),
+                                  np.concatenate(errors_nf["Cd"]),
+                                  np.concatenate(errors_nf["Cm"])])
+    combined_corr = np.concatenate([np.concatenate(errors_corr["Cl"]),
+                                    np.concatenate(errors_corr["Cd"]),
+                                    np.concatenate(errors_corr["Cm"])])
+    mae_nf_all = mae(combined_nf, 0)
+    mae_corr_all = mae(combined_corr, 0)
+    improv["All"] = 100 * (mae_nf_all - mae_corr_all) / (mae_nf_all + EPS)
 
-    print("\nConclusion:")
-    print("  The global ML correction consistently reduces NeuralFoil")
-    print("  prediction error across airfoil geometries and angles")
-    print("  of attack, with clear improvements in Cl, Cd, and Cm,")
-    print("  while preserving surrogate-model efficiency.")
+    # --- Print improvements ---
+    print(f"✅ Improvements for Re = {Re:.0e}:")
+    print(f"    Cl Error Reduction      : {improv['Cl']:.2f}%")
+    print(f"    Cd Error Reduction      : {improv['Cd']:.2f}%")
+    print(f"    Cm Error Reduction      : {improv['Cm']:.2f}%")
+    print(f"    Combined All Error Red. : {improv['All']:.2f}%")
 
-    print("="*70 + "\n")
+    return improv
 
 # ============================================================
-# === RUN ====================================================
+# === MAIN LOOP ==============================================
 # ============================================================
 
-if __name__ == "__main__":
-    main()
+re_labels = []
+improvements_cl = []
+improvements_cd = []
+improvements_cm = []
+improvements_all = []
+
+for Re in Re_list:
+    result = run_for_re(Re)
+    re_labels.append(Re)
+    improvements_cl.append(result["Cl"])
+    improvements_cd.append(result["Cd"])
+    improvements_cm.append(result["Cm"])
+    improvements_all.append(result["All"])
+
+# ============================================================
+# === ERROR REDUCTION VS Re =================================
+# ============================================================
+
+import matplotlib.pyplot as plt
+
+# Reynolds numbers
+Re_list = [1e6, 5e5, 2e5, 1e5, 5e4]
+
+# Error reduction (%) from your printed results
+improvements_cl  = [68.99, 62.53, 59.62, 61.94, 45.94]
+improvements_cd  = [71.00, 66.61, 64.43, 70.30, 55.82]
+improvements_cm  = [79.98, 74.90, 65.91, 61.64, 50.83]
+improvements_all = [71.60, 65.46, 60.97, 62.63, 47.34]
+
+# Plot
+plt.figure(figsize=(10,6))
+plt.plot(Re_list, improvements_cl, 'o-', label="Cl")
+plt.plot(Re_list, improvements_cd, 's-', label="Cd")
+plt.plot(Re_list, improvements_cm, '^-', label="Cm")
+plt.plot(Re_list, improvements_all, 'd-', label="All Combined")
+
+plt.xscale("log")
+plt.xlabel("Reynolds Number", fontweight='bold')
+plt.ylabel("Error Reduction (%)", fontweight='bold')
+plt.title("Global ML Correction Error Reduction vs Reynolds Number", fontsize=16, fontweight='bold')
+plt.legend()
+plt.grid(True, which='both', ls='--', alpha=0.5)
+plt.show()

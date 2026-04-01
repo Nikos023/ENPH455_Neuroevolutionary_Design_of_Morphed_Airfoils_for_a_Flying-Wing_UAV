@@ -22,8 +22,8 @@ import subprocess
 from neuralfoil import get_aero_from_coordinates
 
 # ================== USER SETTINGS ==========================
-REYNOLDS = 2e5
-AoA = -5.00
+REYNOLDS = 5e4
+AoA = 12.50
 
 xfoil_path = "/Users/nicholasburen/Downloads/xfoil/bin/xfoil"
 

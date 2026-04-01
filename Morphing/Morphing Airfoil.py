@@ -78,7 +78,7 @@ offsets = np.zeros_like(y_ctrl)
 
 def smooth_camber(x_ctrl, y_ctrl, x_dense):
     spline = make_interp_spline(x_ctrl, y_ctrl, k=1)
-    return gaussian_filter1d(spline(x_dense), sigma=15)
+    return gaussian_filter1d(spline(x_dense), sigma=25)
 
 def smooth_neighbors(i, strength=0.22, radius=2):
     for j in range(max(0, i - radius), min(len(y_ctrl), i + radius + 1)):

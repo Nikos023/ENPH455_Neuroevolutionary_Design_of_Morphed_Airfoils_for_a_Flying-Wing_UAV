@@ -363,9 +363,9 @@ def train_for_aoa(target_aoa, generations=50, seed_genome=None):
     plt.close('all')
 
 # ================== RUN TRAINING ===========================
-# train_for_aoa(-3.75, generations=Gen)
+# train_for_aoa(AoA, generations=Gen)
 
-aoa_values = np.arange(-5.00, 12.50 + 0.001, 0.25)
+aoa_values = np.arange(-5.00, -3.75 + 0.001, 0.25)
 
 seed_genome = None
 for i, aoa in enumerate(aoa_values):

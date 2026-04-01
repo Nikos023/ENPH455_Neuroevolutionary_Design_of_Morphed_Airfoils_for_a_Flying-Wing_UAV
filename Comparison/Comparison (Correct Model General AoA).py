@@ -11,13 +11,13 @@ import joblib
 # ============================================================
 
 geom_dir = "../Morphing/Geometry/"  # folder with saved .txt airfoils
-xfoil_dir = "../XFOIL/Simulation Results 5000Re1e6/"
-nf_dir = "../NeuralFoil/Simulation Results 5000Re1e6/"
+xfoil_dir = "../XFOIL/Simulation Results 5000Re5e4/"
+nf_dir = "../NeuralFoil/Simulation Results 5000Re5e4/"
 comparison_dir = "../Comparison/Comparison Results"
-Re = 1e6
+Re = 5e4
 
 os.makedirs(comparison_dir, exist_ok=True)
-model_dir = os.path.join(comparison_dir, "global_model")
+model_dir = os.path.join(comparison_dir, "global_model","2000gb", f"Re{Re:.0e}".replace("+0", "").replace("+",""))
 
 
 # ============================================================
@@ -82,7 +82,7 @@ model_cm = joblib.load(os.path.join(model_dir, "global_cm_gb.joblib"))
 # === SELECT AIRFOIL =========================================
 # ============================================================
 
-airfoil_number = "0257"
+airfoil_number = "0039"
 geom_file = os.path.join(geom_dir, f"airfoil_points_{airfoil_number}.txt")
 file_xfoil = os.path.join(xfoil_dir, f"polar_XFOIL_{airfoil_number}_Re{int(Re):.0f}.txt")
 file_nf = os.path.join(nf_dir, f"polar_NeuralFoil_{airfoil_number}_Re{int(Re):.0f}.txt")
@@ -183,54 +183,73 @@ print(f"💾 Corrected comparison saved to '{output_csv}'")
 
 plt.style.use('seaborn-v0_8-whitegrid')
 fig, axs = plt.subplots(3, 2, figsize=(13, 10))
-fig.suptitle(f"XFOIL Results vs NeuralFoil Comparison (Corrected) — Airfoil {airfoil_number} (Re={int(Re):.0f})",
-             fontsize=14, weight='bold')
+fig.suptitle(
+    f"XFOIL Results vs NeuralFoil Comparison (Corrected) — Airfoil {airfoil_number} "
+    f"(Re={Re:.0e})".replace("+0", "").replace("+", ""),
+    fontsize=18,
+    fontweight='bold'
+)
 
-# CL
+# ============================================================
+# === CL =====================================================
+# ============================================================
+
+# Left: Values
 axs[0, 0].plot(alpha_x, cl_x, 'o-', label='XFOIL Results')
 axs[0, 0].plot(alpha_x, cl_nf_i, 's--', label='NF')
-axs[0, 0].plot(alpha_x, cl_corr, 'd-', label='NF Corr')
-axs[0, 0].set_ylabel("Cl")
+axs[0, 0].plot(alpha_x, cl_corr, 'd-', label='NF Corrected')
+axs[0, 0].set_ylabel("Cl", fontsize=12, weight="bold")
+axs[0, 0].set_title("Lift Coefficient", fontsize=14, weight="bold")
 axs[0, 0].legend()
-axs[0, 0].set_title("Lift Coefficient")
 
-axs[0, 1].plot(alpha_x, err_before, 'r-', label='Before Corr')
-axs[0, 1].plot(alpha_x, err_after, 'g-', label='After Corr')
-axs[0, 1].axhline(0, color='k', lw=0.8)
-axs[0, 1].set_ylabel("ΔCl")
-axs[0, 1].set_title("Cl Error vs AoA")
+# Right: Errors
+axs[0, 1].plot(alpha_x, cl_nf_i - cl_x, 'r-', label='Before Correction')
+axs[0, 1].plot(alpha_x, cl_corr - cl_x, 'g-', label='After Correction')
+axs[0, 1].axhline(0, color='k', lw=1)
+axs[0, 1].set_ylabel("ΔCl", fontsize=12, weight="bold")
+axs[0, 1].set_title("Cl Error vs AoA", fontsize=14, weight="bold")
 axs[0, 1].legend()
 
-# CD
+# ============================================================
+# === CD =====================================================
+# ============================================================
+
+# Left: Values
 axs[1, 0].plot(alpha_x, cd_x, 'o-', label='XFOIL Results')
 axs[1, 0].plot(alpha_x, cd_nf_i, 's--', label='NF')
-axs[1, 0].plot(alpha_x, cd_corr, 'd-', label='NF Corr')
-axs[1, 0].set_ylabel("Cd")
+axs[1, 0].plot(alpha_x, cd_corr, 'd-', label='NF Corrected')
+axs[1, 0].set_ylabel("Cd", fontsize=12, weight="bold")
+axs[1, 0].set_title("Drag Coefficient", fontsize=14, weight="bold")
 axs[1, 0].legend()
-axs[1, 0].set_title("Drag Coefficient")
 
-axs[1, 1].plot(alpha_x, cd_nf_i - cd_x, 'r-', label='Before Corr')
-axs[1, 1].plot(alpha_x, cd_corr - cd_x, 'g-', label='After Corr')
-axs[1, 1].axhline(0, color='k', lw=0.8)
-axs[1, 1].set_ylabel("ΔCd")
-axs[1, 1].set_title("Cd Error vs AoA")
+# Right: Errors
+axs[1, 1].plot(alpha_x, cd_nf_i - cd_x, 'r-', label='Before Correction')
+axs[1, 1].plot(alpha_x, cd_corr - cd_x, 'g-', label='After Correction')
+axs[1, 1].axhline(0, color='k', lw=1)
+axs[1, 1].set_ylabel("ΔCd", fontsize=12, weight="bold")
+axs[1, 1].set_title("Cd Error vs AoA", fontsize=14, weight="bold")
 axs[1, 1].legend()
 
-# CM
+# ============================================================
+# === CM =====================================================
+# ============================================================
+
+# Left: Values
 axs[2, 0].plot(alpha_x, cm_x, 'o-', label='XFOIL Results')
 axs[2, 0].plot(alpha_x, cm_nf_i, 's--', label='NF')
-axs[2, 0].plot(alpha_x, cm_corr, 'd-', label='NF Corr')
-axs[2, 0].set_ylabel("Cm")
+axs[2, 0].plot(alpha_x, cm_corr, 'd-', label='NF Corrected')
+axs[2, 0].set_ylabel("Cm", fontsize=12, weight="bold")
+axs[2, 0].set_title("Pitching Moment Coefficient", fontsize=14, weight="bold")
+axs[2, 0].set_xlabel("AoA (°)", fontsize=12, weight="bold")
 axs[2, 0].legend()
-axs[2, 0].set_title("Pitching Moment Coefficient")
-axs[2, 0].set_xlabel("AoA (deg)")
 
-axs[2, 1].plot(alpha_x, cm_nf_i - cm_x, 'r-', label='Before Corr')
-axs[2, 1].plot(alpha_x, cm_corr - cm_x, 'g-', label='After Corr')
-axs[2, 1].axhline(0, color='k', lw=0.8)
-axs[2, 1].set_ylabel("ΔCm")
-axs[2, 1].set_title("Cm Error vs AoA")
-axs[2, 1].set_xlabel("AoA (deg)")
+# Right: Errors
+axs[2, 1].plot(alpha_x, cm_nf_i - cm_x, 'r-', label='Before Correction')
+axs[2, 1].plot(alpha_x, cm_corr - cm_x, 'g-', label='After Correction')
+axs[2, 1].axhline(0, color='k', lw=1)
+axs[2, 1].set_ylabel("ΔCm", fontsize=12, weight="bold")
+axs[2, 1].set_title("Cm Error vs AoA", fontsize=14, weight="bold")
+axs[2, 1].set_xlabel("AoA (°)", fontsize=12, weight="bold")
 axs[2, 1].legend()
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
